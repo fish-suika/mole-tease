@@ -39,7 +39,7 @@
   function saveBest() { try { localStorage.setItem(KEY, String(best)); } catch (e) { } }
 
   // ---- 状態 ----
-  let state = 'title', g = newGame(CFG), press = -1, ptr = null, freeze = false;
+  let state = 'title', g = newGame(CFG), press = -1, ptr = null, freeze = false, whoTimer = 0;
   const hud = $('hud'), hint = $('hint');
 
   function refreshHud() {
@@ -47,6 +47,7 @@
     const left = Math.max(0, Math.ceil(CFG.duration - g.t));
     $('time').textContent = left; $('timeBox').classList.toggle('low', left <= 10);
     for (let i = 0; i < 3; i++) $('lump' + i).classList.toggle('on', i < g.bumps);
+    $('mult').textContent = '×' + g.mult; $('multBox').className = 'chip m' + g.mult + ($('multBox').classList.contains('bump') ? ' bump' : '');
     $('titleBest').textContent = best;
   }
   function pop(html, cls) {
@@ -59,10 +60,12 @@
   }
   function show(id, on) { $(id).classList.toggle('on', on); }
 
-  function startGame() {
-    g = newGame(CFG); press = -1; state = 'play';
+  function startGame(id) {
+    // 人の指定（文字列）は検証用。ふだんは毎回ランダムに 3人から
+    g = newGame(CFG, typeof id === 'string' ? { person: id } : undefined); press = -1; state = 'play';
     show('titleScr', false); show('overScr', false); hud.classList.add('on');
     hint.classList.add('on'); setTimeout(() => hint.classList.remove('on'), 4200);
+    $('whoName').textContent = 'あいて：' + g.person.name; $('who').classList.add('on'); clearTimeout(whoTimer); whoTimer = setTimeout(() => $('who').classList.remove('on'), 4200);
     refreshHud();
   }
   function endGame() {
@@ -72,6 +75,7 @@
     $('overTitle').textContent = g.reason === 'escaped' ? '逃げきり！' : '叩かれた…';
     $('overScore').textContent = score;
     $('overNew').classList.toggle('on', isNew);
+    $('overWho').textContent = g.person.name + (g.maxStage > 0 ? 'を「' + CFG.stages[g.maxStage].name + '」まで怒らせた' : 'は最後まで平静だった');
     $('overStat').textContent = '空振りさせた ' + g.whiffs + ' 回';
     $('overBest').textContent = '自己ベスト ' + best + ' 点';
     setTimeout(() => show('overScr', true), g.reason === 'escaped' ? 500 : 900);
@@ -106,6 +110,9 @@
         else if (e.close >= 0.35) pop(e.label + '<small>+' + e.pts + '</small>', 'near');
         else pop(e.label + '<small>+' + e.pts + '</small>', 'miss');
         $('scoreBox').classList.remove('bump'); void $('scoreBox').offsetWidth; $('scoreBox').classList.add('bump');
+      } else if (e.type === 'stage') {
+        shakeAmp = Math.max(shakeAmp, 0.35);
+        if (e.stage > e.from) { const b = $('multBox'); b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
       } else if (e.type === 'bump') {
         pop('ピコッ！', 'bad');
       } else if (e.type === 'end') endGame();
@@ -134,15 +141,15 @@
     W.fpsView = peek > P.hideAt;
     $('tunnel').style.opacity = peek;
     {   // 危険の知らせ：振りかぶりが進むほど画面の縁が赤く、脈打つ。タイミングバーは「ここで離すと紙一重」の帯つき
-      const hu = g.human, A = CFG.assist, danger = state === 'play' && (hu.phase === 'windup' || hu.phase === 'strike');
-      const total = releaseZone(CFG).total, u = danger ? clamp((hu.phase === 'windup' ? hu.t : CFG.human.windup + hu.t) / total, 0, 1) : 0;
+      const hu = g.human, A = CFG.assist, danger = state === 'play' && (hu.phase === 'windup' || hu.phase === 'strike') && !hu.feint;
+      const total = hu.dur + CFG.human.strike, u = danger ? clamp((hu.phase === 'windup' ? hu.t : hu.dur + hu.t) / total, 0, 1) : 0;
       $('danger').style.opacity = danger ? clamp(Math.pow(u, 1.5) * (0.65 + 0.35 * Math.sin(simT * (9 + 18 * u))) + 0.08, 0, 1) : 0;
       const showBar = danger && A.bar;
       $('clock').classList.toggle('on', showBar); $('clockLab').classList.toggle('on', showBar && g.whiffs < 3);
       if (showBar) $('clockFill').style.width = (u * 100) + '%';
     }
     const mini = $('mini'); mini.classList.toggle('on', state === 'play' && peek > 0.2);
-    if (state === 'play') { const cells = mini.children, hu = g.human, aim = hu.phase === 'windup' || hu.phase === 'strike' ? hu.target : -1; for (let i = 0; i < 9; i++) cells[i].className = i === aim ? 'tg' : i === g.mole.hole ? 'me' : ''; }
+    if (state === 'play') { const cells = mini.children, hu = g.human, on = (hu.phase === 'windup' || hu.phase === 'strike') && !hu.feint, rc = CFG.stages[hu.stage].reach; for (let i = 0; i < 9; i++) cells[i].className = on && (i === hu.target || i === hu.target2) ? 'tg' : on && rc && ((hu.target >= 0 && rowOf(i) === rowOf(hu.target) && Math.abs(colOf(i) - colOf(hu.target)) <= rc) || (hu.target2 >= 0 && rowOf(i) === rowOf(hu.target2) && Math.abs(colOf(i) - colOf(hu.target2)) <= rc)) ? 'rc' : i === g.mole.hole ? 'me' : ''; }
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

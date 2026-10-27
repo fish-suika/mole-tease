@@ -38,13 +38,34 @@ const CFG = {
   },
   human: {
     firstWait: 1.6,       // 開始してから最初に狙うまでの待ち
-    reaction: 0.28,       // モグラが出てから人間が気づくまで（これ未満で引っ込めば狙われない）
+
     windup: 0.70,         // 振りかぶり（予告）の長さ
     strike: 0.12,         // 振り下ろしの長さ
     recoverMiss: 0.55,    // 空振り後に次を狙えるまで
     recoverHit: 1.0,      // 当てたあと
     idleWait: 0.15,       // 次を狙う前のひと呼吸
+    minWindup: 0.45,      // 怒りで速くなっても、振りかぶりはこれ未満にしない（見てから避けられる下限）
+    feintAt: 0.8,         // フェイントは振りかぶりのこの割合で止めて引く（ハンマーを上げきらない）
+    recoverFeint: 0.35,   // フェイントのあと次を狙えるまで
+    ambushWindup: 0.5,    // 待ち伏せ中に同じ穴から出たときの、素早い振りかぶり
+    ambushReaction: 0.12, // 待ち伏せ中に気づくまで
+    recoverAmbush: 0.25,  // 待ち伏せをあきらめたあと
   },
+  // 怒り（0〜max）：空振りで上がる（ギリギリなほど大きく）、時間でさめる、叩くと少し下がる。段階は th 以上で上がり、点の倍率＝段階（×1〜×5）
+  rage: { max: 100, whiffBase: 2, whiffNear: 15, decay: 3.2, hitDrop: 15 },
+  stages: [
+    { name: '平静', th: 0,  windupMul: 1.0,  feint: 0,    reach: 0, hammers: 1, scale: 1 },
+    { name: 'むっ', th: 18, windupMul: 0.88, feint: 0,    reach: 0, hammers: 1, scale: 1 },
+    { name: 'ムキ', th: 42, windupMul: 0.8,  feint: 0.18, reach: 0, hammers: 1, scale: 1.1 },
+    { name: '激怒', th: 68, windupMul: 0.75, feint: 0.18, reach: 1, hammers: 1, scale: 1.7 },   // 巨大ハンマー：左右の隣の穴まで届く
+    { name: '錯乱', th: 88, windupMul: 0.75, feint: 0.22, reach: 1, hammers: 2, scale: 1.7 },   // 2本同時
+  ],
+  // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、stray＝隣を叩く率、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp/rageDown＝怒りの上がりやすさ・さめやすさ
+  persons: [
+    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.22, stray: 0.25, feint: 0,    ambush: 0,   rageUp: 1.3, rageDown: 1.5 },
+    { id: 'uncle',  name: '負けず嫌いのおじさん', windupMul: 1.0,  reaction: 0.30, stray: 0,    feint: 0.22, ambush: 0,   rageUp: 1.0, rageDown: 0.55 },
+    { id: 'granny', name: '正確なおばあちゃん',   windupMul: 1.1,  reaction: 0.30, stray: 0,    feint: 0,    ambush: 1.3, rageUp: 1.35, rageDown: 1.0 },
+  ],
   score: {
     pps: 100,             // 顔を出している間の毎秒の点
     whiffBase: 50,        // 空振りさせたときの基本点
@@ -68,6 +89,7 @@ function holePos(i, CFG) {
   const H = CFG.holes;
   return { x: (i % 3 - 1) * H.dx, z: H.z0 + Math.floor(i / 3) * H.dz };
 }
+const rowOf = i => Math.floor(i / 3), colOf = i => i % 3;
 
 // 画面の座標（px）から押している穴を決める。cur＝今押している穴、hyst＝今の穴を離れにくくする倍率
 function pickHole(px, py, pts, cur, hyst) {
@@ -119,43 +141,80 @@ function moleStep(m, dt, press, now, CFG) {
 
 function isHittable(m, CFG) { return m.stun <= 0 && m.travel === 0 && m.h > CFG.mole.hitH; }
 
-// ---- 人間 ----
-function newHuman(CFG) {
-  return { phase: 'idle', t: 0, seq: 0, wait: CFG.human.firstWait, target: -1, recover: 0, mood: 'calm' };   // seq＝フェーズが変わるたびに増える（見た目の切り替え用）
+// ---- 人間（3人の癖・怒りの段階つき） ----
+function pickPerson(rng, CFG) { return CFG.persons[Math.min(CFG.persons.length - 1, Math.floor(rng() * CFG.persons.length))]; }
+function stageOf(rage, CFG) { let s = 0; for (let i = 0; i < CFG.stages.length; i++) if (rage >= CFG.stages[i].th) s = i; return s; }
+// 振りかぶりの長さ：人の癖 × 怒りの段階。短くしすぎない（見てから避けられる下限 minWindup）
+function windupDur(P, S, CFG) { return Math.max(CFG.human.minWindup, CFG.human.windup * P.windupMul * S.windupMul); }
+
+function newHuman(CFG, person) {
+  // seq＝フェーズが変わるたびに増える（見た目の切り替え用）。target2＝2本目のハンマーの穴（怒り最大のとき）
+  return { person, phase: 'idle', t: 0, seq: 0, wait: CFG.human.firstWait, target: -1, target2: -1, dur: 0, stage: 0, feint: false, strayed: false, recover: 0, mood: 'calm' };
 }
 
-// 人間の 1 コマ。出来事（windup / strike / impact）を配列で返す
-function humanStep(hu, dt, m, now, CFG) {
-  const Hc = CFG.human, ev = [];
+// 振りかぶりを始める。ambush＝待ち伏せからの素早い振りかぶり
+function startWindup(hu, hole, ambush, ctx, CFG) {
+  const P = hu.person, S = CFG.stages[ctx.stage];
+  hu.phase = 'windup'; hu.t = 0; hu.seq++; hu.mood = 'aim'; hu.stage = ctx.stage;
+  hu.target = hole; hu.strayed = false; hu.feint = false; hu.target2 = -1;
+  if (!ambush) {
+    if (P.stray > 0 && ctx.rng() < P.stray) {            // 雑：隣（左右）の穴を狙ってしまう
+      const c = colOf(hole), opts = []; if (c > 0) opts.push(hole - 1); if (c < 2) opts.push(hole + 1);
+      hu.target = opts[Math.min(opts.length - 1, Math.floor(ctx.rng() * opts.length))]; hu.strayed = true;
+    }
+    hu.feint = ctx.rng() < clamp(P.feint + S.feint, 0, 0.6);
+  }
+  hu.dur = ambush ? CFG.human.ambushWindup : windupDur(P, S, CFG);
+  if (S.hammers >= 2 && !hu.feint) {                       // 2本目：ちがう行のどこか（行を変えるだけでは逃げきれない）
+    const r2 = (rowOf(hu.target) + 1 + Math.min(1, Math.floor(ctx.rng() * 2))) % 3;
+    hu.target2 = r2 * 3 + Math.min(2, Math.floor(ctx.rng() * 3));
+  }
+  return { type: 'windup', hole: hu.target, hole2: hu.target2, dur: hu.dur, feint: hu.feint, stray: hu.strayed, ambush: !!ambush };
+}
+
+function goPhase(hu, phase, mood) { hu.phase = phase; hu.t = 0; hu.seq++; if (mood) hu.mood = mood; }
+
+// 人間の 1 コマ。出来事（windup / strike / feint / impact）を配列で返す。ctx＝{ stage, rng }
+function humanStep(hu, dt, m, now, CFG, ctx) {
+  const Hc = CFG.human, P = hu.person, ev = [];
   hu.t += dt;
   if (hu.phase === 'idle') {
     hu.wait -= dt;
-    if (hu.wait <= 0 && m.stun <= 0 && m.upSince >= 0 && now - m.upSince >= Hc.reaction) {
-      hu.phase = 'windup'; hu.t = 0; hu.seq++; hu.target = m.hole; hu.mood = 'aim';
-      ev.push({ type: 'windup', hole: hu.target });
-    }
+    if (hu.wait <= 0 && m.stun <= 0 && m.upSince >= 0 && now - m.upSince >= P.reaction) ev.push(startWindup(hu, m.hole, false, ctx, CFG));
+  } else if (hu.phase === 'ambush') {
+    // 待ち伏せ：空振りした穴の上でハンマーを構えたまま待つ。同じ穴から出直すと素早く叩く
+    if (m.stun <= 0 && m.hole === hu.target && m.upSince >= 0 && now - m.upSince >= Hc.ambushReaction) ev.push(startWindup(hu, hu.target, true, ctx, CFG));
+    else if (hu.t >= P.ambush) { goPhase(hu, 'recover', 'calm'); hu.recover = Hc.recoverAmbush; }
   } else if (hu.phase === 'windup') {
-    if (hu.t >= Hc.windup) { hu.phase = 'strike'; hu.t = 0; hu.seq++; ev.push({ type: 'strike', hole: hu.target }); }
+    if (hu.feint && hu.t >= hu.dur * Hc.feintAt) {         // フェイント：ハンマーを上げきらずに止めて、引く
+      ev.push({ type: 'feint', hole: hu.target });
+      goPhase(hu, 'recover', 'feint'); hu.recover = Hc.recoverFeint;
+    } else if (hu.t >= hu.dur) { goPhase(hu, 'strike'); ev.push({ type: 'strike', hole: hu.target, hole2: hu.target2 }); }
   } else if (hu.phase === 'strike') {
     if (hu.t >= Hc.strike) {
-      const hit = m.hole === hu.target && isHittable(m, CFG);
+      const S = CFG.stages[hu.stage];
+      const cover = t => t >= 0 && rowOf(m.hole) === rowOf(t) && Math.abs(colOf(m.hole) - colOf(t)) <= S.reach;   // 巨大ハンマーは左右の隣の穴まで届く
+      const hit = isHittable(m, CFG) && (cover(hu.target) || cover(hu.target2));
+      const stray = !hit && hu.strayed && m.hole !== hu.target;
       let gap = null, close = 0;
-      if (!hit) {
+      if (!hit && !stray) {
         gap = Math.max(0, now - m.exitTs[hu.target]);
         close = clamp(1 - gap / CFG.score.nearWindow, 0, 1);
       }
-      ev.push({ type: 'impact', hole: hu.target, hit, gap, close });
-      hu.phase = 'recover'; hu.t = 0; hu.seq++; hu.recover = hit ? Hc.recoverHit : Hc.recoverMiss; hu.mood = hit ? 'happy' : 'miss';
+      ev.push({ type: 'impact', hole: hu.target, hole2: hu.target2, hit, stray, gap, close });
+      if (hit) { goPhase(hu, 'recover', 'happy'); hu.recover = Hc.recoverHit; }
+      else if (!stray && P.ambush > 0) goPhase(hu, 'ambush', 'aim');
+      else { goPhase(hu, 'recover', 'miss'); hu.recover = Hc.recoverMiss; }
     }
   } else if (hu.phase === 'recover') {
-    if (hu.t >= hu.recover) { hu.phase = 'idle'; hu.t = 0; hu.seq++; hu.wait = Hc.idleWait; hu.mood = 'calm'; }
+    if (hu.t >= hu.recover) { goPhase(hu, 'idle', 'calm'); hu.wait = Hc.idleWait; hu.target2 = -1; }
   }
   return ev;
 }
 
-// 振りかぶり開始からの「離す時刻」の帯（タイミングバー用）。from＝これ以降に離すとギリギリ度が zoneNear 以上、to＝これを過ぎると叩かれる直前。total＝振りかぶり＋振り下ろし
-function releaseZone(CFG) {
-  const total = CFG.human.windup + CFG.human.strike, fallT = (1 - CFG.mole.hitH) / CFG.mole.fall;
+// 振りかぶり開始からの「離す時刻」の帯（タイミングバー用。いまは非表示）。from＝これ以降に離すとギリギリ度が zoneNear 以上、to＝これを過ぎると叩かれる直前。total＝振りかぶり＋振り下ろし
+function releaseZone(CFG, dur) {
+  const total = (dur || CFG.human.windup) + CFG.human.strike, fallT = (1 - CFG.mole.hitH) / CFG.mole.fall;
   return { total, from: total - fallT - (1 - CFG.assist.zoneNear) * CFG.score.nearWindow, to: total - fallT - 0.02 };
 }
 
@@ -164,30 +223,41 @@ function whiffPoints(close, mult, CFG) { return Math.round((CFG.score.whiffBase 
 function whiffLabel(close) { return close >= 0.7 ? '紙一重！' : close >= 0.35 ? 'ギリギリ！' : 'スカッ'; }
 
 // ---- ゲーム全体 ----
-function newGame(CFG) {
-  return { t: 0, mole: newMole(), human: newHuman(CFG), score: 0, bumps: 0, whiffs: 0, bestClose: 0, mult: 1, over: false, reason: '' };
+// opts：person＝人の id かその設定（なければ rng で 3人から選ぶ）、rng＝乱数（検証用に差し替え可）、noRage＝怒りを動かさない（検証用）
+function newGame(CFG, opts) {
+  opts = opts || {};
+  const rng = opts.rng || Math.random;
+  const person = typeof opts.person === 'object' ? opts.person : opts.person ? CFG.persons.find(p => p.id === opts.person) : pickPerson(rng, CFG);
+  return { t: 0, rng, person, noRage: !!opts.noRage, mole: newMole(), human: newHuman(CFG, person), score: 0, bumps: 0, whiffs: 0, bestClose: 0, mult: 1, rage: 0, stage: 0, maxStage: 0, over: false, reason: '' };
 }
 
-// dt 秒進める。出来事（windup / strike / whiff / bump / end）を配列で返す
+// dt 秒進める。出来事（windup / strike / feint / whiff / stray / bump / stage / end）を配列で返す
 function stepGame(g, dt, press, CFG) {
   const ev = [];
   if (g.over) return ev;
   g.t += dt;
-  const m = g.mole;
+  const m = g.mole, R = CFG.rage, P = g.person;
   moleStep(m, dt, press, g.t, CFG);
   if (m.stun <= 0 && m.h >= CFG.score.scoreH) g.score += CFG.score.pps * g.mult * dt;
-  for (const e of humanStep(g.human, dt, m, g.t, CFG)) {
+  if (!g.noRage) g.rage = Math.max(0, g.rage - R.decay * P.rageDown * dt);   // 怒りは時間でさめていく（人ごとに速さがちがう）
+  for (const e of humanStep(g.human, dt, m, g.t, CFG, { stage: g.stage, rng: g.rng })) {
     ev.push(e);
     if (e.type !== 'impact') continue;
     if (e.hit) {
       g.bumps++; m.stun = CFG.mole.stunTime; m.hitT = 0;
+      if (!g.noRage) g.rage = Math.max(0, g.rage - R.hitDrop);              // 叩くとすっきりする
       ev.push({ type: 'bump', bumps: g.bumps, hole: e.hole });
+    } else if (e.stray) {
+      ev.push({ type: 'stray', hole: e.hole });                              // 隣を叩いてしまった（避けたわけではないので点も怒りもなし）
     } else {
       const pts = whiffPoints(e.close, g.mult, CFG);
       g.score += pts; g.whiffs++; g.bestClose = Math.max(g.bestClose, e.close);
+      if (!g.noRage) g.rage = Math.min(R.max, g.rage + (R.whiffBase + R.whiffNear * e.close) * P.rageUp);
       ev.push({ type: 'whiff', close: e.close, gap: e.gap, pts, hole: e.hole, label: whiffLabel(e.close) });
     }
   }
+  const st = stageOf(g.rage, CFG);
+  if (st !== g.stage) { ev.push({ type: 'stage', stage: st, from: g.stage }); g.stage = st; g.mult = st + 1; g.maxStage = Math.max(g.maxStage, st); }
   if (g.bumps >= CFG.maxBumps) { g.over = true; g.reason = 'bumped'; ev.push({ type: 'end', reason: g.reason }); }
   else if (g.t >= CFG.duration) { g.over = true; g.reason = 'escaped'; ev.push({ type: 'end', reason: g.reason }); }
   return ev;
@@ -202,10 +272,13 @@ function check(name, cond, why) {
 }
 const near = (x, y, e) => Math.abs(x - y) <= (e || 1e-9);
 const DT = 1 / 60;
+// Phase 1 の検証は「標準的な人（癖なし・怒りなし）」で行う
+const PLAIN = { id: 'plain', name: '標準', windupMul: 1, reaction: 0.28, stray: 0, feint: 0, ambush: 0, rageUp: 1, rageDown: 1 };
+const PO = { person: PLAIN, noRage: true };
 
 // bot(g, ev) が押す穴（なければ -1）を返す。終わるか seconds たつまで回す
 function run(bot, seconds) {
-  const g = newGame(CFG), evs = [];
+  const g = newGame(CFG, PO), evs = [];
   let last = [];
   for (let i = 0; i < Math.round(seconds / DT) && !g.over; i++) {
     const e = stepGame(g, DT, bot(g, last), CFG);
@@ -258,13 +331,13 @@ const hide = () => -1;
   const { g, evs } = run(holdHole(4), 3);
   const w = evs.find(e => e.type === 'windup'), i = evs.find(e => e.type === 'impact');
   check('顔を出し続けると人間が振りかぶる', !!w && w.hole === 4);
-  check('振りかぶりから振り下ろしまで予告の長さがある', (() => { const a = run(holdHole(4), 4); let tw = null, ts = null, k = 0; const g2 = newGame(CFG); for (let n = 0; n < 240; n++) { const e = stepGame(g2, DT, 4, CFG); for (const x of e) { if (x.type === 'windup' && tw === null) tw = g2.t; if (x.type === 'impact' && ts === null) ts = g2.t; } } return ts - tw >= CFG.human.windup + CFG.human.strike - 0.03 && ts - tw <= CFG.human.windup + CFG.human.strike + 0.03; })());
+  check('振りかぶりから振り下ろしまで予告の長さがある', (() => { const a = run(holdHole(4), 4); let tw = null, ts = null, k = 0; const g2 = newGame(CFG, PO); for (let n = 0; n < 240; n++) { const e = stepGame(g2, DT, 4, CFG); for (const x of e) { if (x.type === 'windup' && tw === null) tw = g2.t; if (x.type === 'impact' && ts === null) ts = g2.t; } } return ts - tw >= CFG.human.windup + CFG.human.strike - 0.03 && ts - tw <= CFG.human.windup + CFG.human.strike + 0.03; })());
   check('出たままだと叩かれる（当たり）', !!i && i.hit === true);
   check('当たるとたんこぶ 1 つ・イベントが出る', g.bumps >= 1 && evs.some(e => e.type === 'bump' && e.bumps === 1));
   const early = run(holdHole(4), 0.5);
   check('開始直後の待ちのあいだは狙わない', !early.evs.some(e => e.type === 'windup'));
   check('出てすぐ引っ込めば（気づく前に）狙われない', (() => {
-    const g2 = newGame(CFG); let n = 0, ev2 = [];
+    const g2 = newGame(CFG, PO); let n = 0, ev2 = [];
     for (; n < 60 * 2; n++) ev2 = ev2.concat(stepGame(g2, DT, -1, CFG));           // 2 秒（最初の待ち）隠れる
     for (n = 0; n < 8; n++) ev2 = ev2.concat(stepGame(g2, DT, 4, CFG));            // 0.13 秒出る
     for (n = 0; n < 120; n++) ev2 = ev2.concat(stepGame(g2, DT, -1, CFG));
@@ -286,7 +359,7 @@ function dodgeBot(d, hole) {
   };
 }
 function firstWhiff(d) {
-  const g = newGame(CFG), bot = dodgeBot(d, 4); let last = [];
+  const g = newGame(CFG, PO), bot = dodgeBot(d, 4); let last = [];
   for (let i = 0; i < 60 * 8 && !g.over; i++) { last = stepGame(g, DT, bot(g, last), CFG); const w = last.find(e => e.type === 'whiff'); if (w) return w; if (last.some(e => e.type === 'bump')) return null; }
   return null;
 }
@@ -301,19 +374,19 @@ function firstWhiff(d) {
   check('ギリギリの空振りの点は、基本の点より十分大きい（欲張りの理由になる）', late.pts >= CFG.score.whiffBase * 5, String(late.pts));
   check('ギリギリ度は 0〜1 に収まる', [early, mid, late].every(w => w.close >= 0 && w.close <= 1));
   check('ギリギリ度が高いほど言い方が強い', whiffLabel(0.9) === '紙一重！' && whiffLabel(0.5) === 'ギリギリ！' && whiffLabel(0.1) === 'スカッ');
-  check('引っ込んでから叩かれるまでの隙間が 0 ならギリギリ度 1', (() => { const g = newGame(CFG); const m = g.mole; m.exitTs[4] = 10; const hu = g.human; hu.phase = 'strike'; hu.t = CFG.human.strike - 0.001; hu.target = 4; m.hole = 4; m.h = 0; const e = humanStep(hu, 0.01, m, 10, CFG); return near(e[0].close, 1, 1e-9); })());
+  check('引っ込んでから叩かれるまでの隙間が 0 ならギリギリ度 1', (() => { const g = newGame(CFG, PO); const m = g.mole; m.exitTs[4] = 10; const hu = g.human; hu.phase = 'strike'; hu.t = CFG.human.strike - 0.001; hu.target = 4; m.hole = 4; m.h = 0; const e = humanStep(hu, 0.01, m, 10, CFG, { stage: 0, rng: Math.random }); return near(e[0].close, 1, 1e-9); })());
 })();
 
 // ---- 点数 ----
 (() => {
-  const g = newGame(CFG); g.human.wait = 99;     // 人間が動かない状態で点だけ測る
+  const g = newGame(CFG, PO); g.human.wait = 99;     // 人間が動かない状態で点だけ測る
   for (let i = 0; i < 60; i++) stepGame(g, DT, 4, CFG);
   check('出ている間だけ毎秒 pps 点が入る（1 秒で約 pps−出はじめの分）', g.score > CFG.score.pps * 0.8 && g.score <= CFG.score.pps + 1e-6, String(g.score));
-  const g2 = newGame(CFG); g2.human.wait = 99;
+  const g2 = newGame(CFG, PO); g2.human.wait = 99;
   for (let i = 0; i < 120; i++) stepGame(g2, DT, -1, CFG);
   check('隠れている間は点が入らない', g2.score === 0);
-  check('倍率がかかる（Phase 2 の怒りの倍率の土台）', (() => { const a = newGame(CFG), b = newGame(CFG); a.human.wait = b.human.wait = 99; b.mult = 3; for (let i = 0; i < 60; i++) { stepGame(a, DT, 4, CFG); stepGame(b, DT, 4, CFG); } return near(b.score / a.score, 3, 1e-6); })());
-  const g3 = newGame(CFG); g3.human.wait = 99;
+  check('倍率がかかる（Phase 2 の怒りの倍率の土台）', (() => { const a = newGame(CFG, PO), b = newGame(CFG, PO); a.human.wait = b.human.wait = 99; b.mult = 3; for (let i = 0; i < 60; i++) { stepGame(a, DT, 4, CFG); stepGame(b, DT, 4, CFG); } return near(b.score / a.score, 3, 1e-6); })());
+  const g3 = newGame(CFG, PO); g3.human.wait = 99;
   for (let i = 0; i < 3; i++) stepGame(g3, DT, 4, CFG);
   check('出はじめ（半分以下）の高さでは点が入らない', g3.score === 0, String(g3.score));
 })();
@@ -348,6 +421,164 @@ function firstWhiff(d) {
   check('帯の終わりで離しても叩かれずに空振り（ギリギリ度は高い）', b && b.close > 0.7, JSON.stringify(b));
   check('帯を過ぎて離すと叩かれる', c === null);
   check('帯はバーの中（0〜total）に収まり、幅がある', Z.from > 0 && Z.to < Z.total && Z.to - Z.from > 0.05, JSON.stringify(Z));
+})();
+// ===== Phase 2：怒りの段階・3人の癖 =====
+function seeded(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+const PERS = id => CFG.persons.find(p => p.id === id);
+const FALL = (1 - CFG.mole.hitH) / CFG.mole.fall;
+const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+const info = (name, v) => check(name + '：' + v, true);
+
+// 振りかぶりを見て避ける人。margin＝叩かれる何秒前に引っ込むか、hop＝避けるたびに穴を変える。フェイントは見分けて動じない
+function skilled(margin, hop, jit, seed) {
+  let rel = null, hi = 0; const holes = [4, 5, 3, 4], jr = seeded((seed || 1) * 99991 + 7);   // jit＝離す時刻のばらつき（人間らしさ。±秒）
+  return (g, last) => {
+    for (const e of last) {
+      if (e.type === 'windup') rel = (e.feint || (e.stray && g.stage < 3)) ? null : g.t + e.dur + CFG.human.strike - FALL - margin + (jit ? (jr() * 2 - 1) * jit : 0);
+      else if (e.type === 'feint') rel = null;
+      else if (e.type === 'impact') { rel = null; if (hop && !e.hit) hi = (hi + 1) % 3; }
+    }
+    if (rel !== null && g.t >= rel) return -1;
+    return holes[hi];
+  };
+}
+function runG(opts, bot, seconds) {
+  const g = newGame(CFG, opts), evs = []; let last = [];
+  for (let i = 0; i < Math.round(seconds / DT) && !g.over; i++) { last = stepGame(g, DT, bot(g, last), CFG); for (const e of last) evs.push(e); }
+  return { g, evs };
+}
+const holdOn = n => () => n;
+
+// ---- 段階と倍率 ----
+(() => {
+  const st = r => stageOf(r, CFG);
+  check('怒りの値から段階が決まる（0→平静、18→むっ、42→ムキ、68→激怒、88→錯乱）', st(0) === 0 && st(17.9) === 0 && st(18) === 1 && st(42) === 2 && st(68) === 3 && st(88) === 4 && st(100) === 4);
+  const g = newGame(CFG, { person: PLAIN }); g.human.wait = 99; g.rage = 50; const ev = stepGame(g, DT, -1, CFG);
+  check('段階が上がると倍率＝段階+1 になり、stage の出来事が出る', g.stage === 2 && g.mult === 3 && ev.some(e => e.type === 'stage' && e.stage === 2));
+  const g2 = newGame(CFG, { person: PLAIN }); g2.human.wait = 99; g2.rage = 50; stepGame(g2, DT, -1, CFG);
+  const s0 = g2.score; for (let i = 0; i < 60; i++) stepGame(g2, DT, 4, CFG);
+  check('倍率 ×3 のとき、顔を出している間の点が 3 倍', g2.score - s0 > CFG.score.pps * 3 * 0.8 - 1, String(g2.score - s0));
+  check('怒りは 0〜max に収まる', (() => { const r = runG({ person: PLAIN, rng: seeded(1) }, skilled(0.1, false), 60); return r.g.rage >= 0 && r.g.rage <= CFG.rage.max; })());
+})();
+
+// ---- 怒りの増減 ----
+(() => {
+  const total = CFG.human.windup + CFG.human.strike;
+  function rageAfterFirstWhiff(releaseAfter) {
+    const g = newGame(CFG, { person: PLAIN, rng: seeded(3) }); let tw = null, last = [];
+    for (let i = 0; i < 60 * 8 && !g.over; i++) {
+      for (const e of last) if (e.type === 'windup') tw = g.t;
+      last = stepGame(g, DT, tw !== null && g.t - tw >= releaseAfter ? -1 : 4, CFG);
+      const w = last.find(e => e.type === 'whiff'); if (w) return { rage: g.rage, close: w.close };
+    }
+    return null;
+  }
+  const far = rageAfterFirstWhiff(0.15), nearW = rageAfterFirstWhiff(total - 0.17);
+  check('空振りさせると怒りが上がる', far && far.rage > 0, JSON.stringify(far));
+  check('ギリギリなほど怒りが大きく上がる', nearW.rage > far.rage + 5, nearW.rage + ' vs ' + far.rage);
+  const gh = runG({ person: PLAIN, rng: seeded(1) }, holdOn(4), 4);
+  check('叩かれると怒りが下がる（上がっていれば）', (() => { const g = newGame(CFG, { person: PLAIN }); g.rage = 50; g.human.wait = 0; let drop = null; for (let i = 0; i < 60 * 4; i++) { const b = g.rage; const e = stepGame(g, DT, 4, CFG); if (e.some(x => x.type === 'bump')) { drop = b - g.rage; break; } } return drop !== null && drop > CFG.rage.hitDrop - 1; })());
+  const cool = (id) => { const g = newGame(CFG, { person: PERS(id) }); g.human.wait = 999; g.rage = 50; for (let i = 0; i < 600; i++) stepGame(g, DT, -1, CFG); return g.rage; };
+  check('怒りは時間でさめる。おじさんはさめにくく、子どもはさめやすい', cool('kid') < cool('granny') && cool('granny') < cool('uncle'), [cool('kid'), cool('granny'), cool('uncle')].map(x => x.toFixed(1)).join(' / '));
+  check('隠れ続けても怒りは上がらない', (() => { const r = runG({ person: PLAIN }, () => -1, 70); return r.g.rage === 0 && r.g.maxStage === 0; })());
+})();
+
+// ---- 段階ごとの攻撃の変化 ----
+(() => {
+  const win = (p, s) => windupDur(PERS(p), CFG.stages[s], CFG);
+  check('怒りが上がるほど振りかぶりが速くなる（段階 0→4 で縮む）', [0, 1, 2, 3].every(s => win('uncle', s + 1) <= win('uncle', s)) && win('uncle', 4) < win('uncle', 0));
+  check('振りかぶりは下限（見てから避けられる長さ）を下回らない', ['kid', 'uncle', 'granny'].every(p => [0, 1, 2, 3, 4].every(s => win(p, s) >= CFG.human.minWindup - 1e-9)));
+  check('下限は 反応 0.25秒＋引っ込む時間＋ゆとり 0.1秒 以上', CFG.human.minWindup >= 0.25 + FALL + 0.1 - 1e-9, String(CFG.human.minWindup));
+  check('子どもは最初から最短（振りかぶりが速い）、おばあちゃんは長い', win('kid', 0) <= CFG.human.minWindup + 1e-9 && win('granny', 0) > win('uncle', 0));
+  check('段階が上がるほど届く範囲・ハンマーの数は増える（減らない）', CFG.stages.every((s, i) => i === 0 || (s.reach >= CFG.stages[i - 1].reach && s.hammers >= CFG.stages[i - 1].hammers && s.scale >= CFG.stages[i - 1].scale)));
+  // 届く範囲：巨大ハンマーは左右の隣の穴まで
+  function strikeAt(stage, target, moleHole, target2) {
+    const g = newGame(CFG, { person: PLAIN, noRage: true }), hu = g.human, m = g.mole;
+    hu.stage = stage; hu.phase = 'strike'; hu.t = CFG.human.strike - 0.001; hu.target = target; hu.target2 = target2 === undefined ? -1 : target2; m.hole = moleHole; m.h = 1;
+    return humanStep(hu, 0.01, m, 10, CFG, { stage, rng: Math.random }).find(e => e.type === 'impact');
+  }
+  check('段階 3（激怒）は左右の隣の穴にいても叩かれる', strikeAt(3, 3, 4).hit && strikeAt(3, 5, 4).hit);
+  check('段階 2 までは隣の穴なら当たらない', !strikeAt(2, 3, 4).hit && !strikeAt(0, 5, 4).hit);
+  check('巨大ハンマーでも、ちがう行なら当たらない', !strikeAt(3, 0, 4).hit && !strikeAt(3, 7, 4).hit);
+  check('段階 4（錯乱）は 2 本目の穴にいても叩かれる', strikeAt(4, 1, 7, 6).hit);
+  check('2 本目の穴は、1 本目とちがう行になる', (() => { for (let s = 1; s <= 200; s++) for (let h = 0; h < 9; h++) { const hu = newHuman(CFG, PERS('uncle')); const e = startWindup(hu, h, false, { stage: 4, rng: seeded(s * 31 + h) }, CFG); if (e.feint) continue; if (!(e.hole2 >= 0 && e.hole2 <= 8 && rowOf(e.hole2) !== rowOf(e.hole))) return false; } return true; })());
+  check('段階 3 までは 2 本目が出ない', (() => { const hu = newHuman(CFG, PERS('uncle')); return startWindup(hu, 4, false, { stage: 3, rng: seeded(9) }, CFG).hole2 === -1; })());
+})();
+
+// ---- 3人の癖 ----
+(() => {
+  // フェイント（おじさん）：振りかぶって止めて引く。出たままでも叩かれない
+  const fe = runG({ person: PERS('uncle'), noRage: true, rng: () => 0 }, holdOn(4), 4);
+  const w = fe.evs.find(e => e.type === 'windup');
+  check('おじさんはフェイントをする（振りかぶり→止めて引く。叩かない）', w && w.feint && fe.evs.some(e => e.type === 'feint') && !fe.evs.some(e => e.type === 'impact'));
+  check('フェイントのあいだ顔を出し続けても叩かれない・点は増え続ける', fe.g.bumps === 0 && fe.g.score > 200, fe.g.score + ' bumps=' + fe.g.bumps);
+  check('フェイントはその後も続く（何度も振りかぶるが当たらない）', fe.evs.filter(e => e.type === 'windup').length >= 2);
+  const fr = runG({ person: PERS('uncle'), noRage: true, rng: seeded(5) }, holdOn(4), 60);
+  check('フェイントがない回は叩く（おじさんは出たままなら当たる）', fr.evs.some(e => e.type === 'impact' && e.hit));
+  const feintRate = (() => { let f = 0, n = 0; const hu = newHuman(CFG, PERS('uncle')), rng = seeded(77); for (let i = 0; i < 2000; i++) { const e = startWindup(hu, 4, false, { stage: 0, rng }, CFG); n++; if (e.feint) f++; } return f / n; })();
+  check('おじさんのフェイント率は設定（約 22%）', Math.abs(feintRate - PERS('uncle').feint) < 0.04, feintRate.toFixed(3));
+  check('子ども・おばあちゃんは最初はフェイントしない', (() => { for (const id of ['kid', 'granny']) { const hu = newHuman(CFG, PERS(id)), rng = seeded(8); for (let i = 0; i < 300; i++) if (startWindup(hu, 4, false, { stage: 0, rng }, CFG).feint) return false; } return true; })());
+  check('怒りが上がるとフェイントが混ざる（段階 2 以降は子どもも）', (() => { const hu = newHuman(CFG, PERS('kid')), rng = seeded(8); let f = 0; for (let i = 0; i < 500; i++) if (startWindup(hu, 4, false, { stage: 2, rng }, CFG).feint) f++; return f > 40; })());
+
+  // 雑な狙い（子ども）：隣の穴を叩く
+  const ky = runG({ person: PERS('kid'), noRage: true, rng: () => 0 }, holdOn(4), 4);
+  const kw = ky.evs.find(e => e.type === 'windup');
+  check('子どもは隣（左右）の穴を狙うことがある', kw && kw.stray && rowOf(kw.hole) === rowOf(4) && Math.abs(colOf(kw.hole) - colOf(4)) === 1, JSON.stringify(kw));
+  check('隣を叩かれても当たらず、避けたことにもならない（点・怒りなし）', ky.evs.some(e => e.type === 'stray') && !ky.evs.some(e => e.type === 'whiff') && ky.g.whiffs === 0 && ky.g.rage === 0);
+  check('子どもが隣を叩く率は設定（約 25%）', (() => { let s = 0; const hu = newHuman(CFG, PERS('kid')), rng = seeded(41); for (let i = 0; i < 2000; i++) if (startWindup(hu, 4, false, { stage: 0, rng }, CFG).stray) s++; return Math.abs(s / 2000 - PERS('kid').stray) < 0.04; })());
+  check('端の穴では内側の隣だけを狙う', (() => { for (let s = 1; s <= 100; s++) { const hu = newHuman(CFG, PERS('kid')); const e = startWindup(hu, 3, false, { stage: 0, rng: seeded(s) }, CFG); if (e.stray && e.hole !== 4) return false; const e2 = startWindup(hu, 5, false, { stage: 0, rng: seeded(s) }, CFG); if (e2.stray && e2.hole !== 4) return false; } return true; })());
+
+  // 待ち伏せ（おばあちゃん）：空振りした穴の上で構えて待つ
+  function grannyAfterWhiff(next) {   // 最初の空振りまで 4 を押し続けて避け、そのあと next（穴番号）を押す
+    const g = newGame(CFG, { person: PERS('granny'), noRage: true, rng: () => 0.99 }); let tw = null, last = [], whiffAt = null; const evs = [];
+    for (let i = 0; i < 60 * 12 && !g.over; i++) {
+      for (const e of last) if (e.type === 'windup' && whiffAt === null) tw = g.t;
+      const press = whiffAt !== null ? next : (tw !== null && g.t - tw >= g.human.dur - 0.1 ? -1 : 4);
+      last = stepGame(g, DT, press, CFG); for (const e of last) { evs.push(e); if (e.type === 'whiff' && whiffAt === null) whiffAt = g.t; }
+      if (whiffAt !== null && g.t - whiffAt > 3.5) break;
+    }
+    return { g, evs, whiffAt };
+  }
+  const gr = grannyAfterWhiff(4);
+  check('おばあちゃんは空振りのあと、その穴の上で構えて待つ（待ち伏せ）', gr.whiffAt !== null && gr.evs.some(e => e.type === 'windup' && e.ambush));
+  check('同じ穴から出直すと、待ち伏せで素早く振りかぶる（短い予告）', (() => { const e = gr.evs.find(x => x.type === 'windup' && x.ambush); return e && near(e.dur, CFG.human.ambushWindup, 1e-9) && e.hole === 4; })());
+  check('待ち伏せの振りかぶりでも、見てから避けられる長さがある', CFG.human.ambushWindup >= 0.25 + FALL + 0.1 - 1e-9, String(CFG.human.ambushWindup));
+  const gr2 = grannyAfterWhiff(5);
+  check('別の穴へ移れば待ち伏せにはかからない（すぐには狙われない・ふつうの振りかぶりで来る）', !gr2.evs.some(e => e.type === 'windup' && e.ambush) && gr2.evs.some(e => e.type === 'windup' && !e.ambush && e.hole === 5));
+  check('おじさん・子どもは待ち伏せしない', (() => { for (const id of ['kid', 'uncle']) { const r = runG({ person: PERS(id), noRage: true, rng: () => 0.99 }, skilled(0.12, false), 30); if (r.evs.some(e => e.type === 'windup' && e.ambush)) return false; } return true; })());
+})();
+
+// ---- ランダムに来る人 ----
+(() => {
+  const rng = seeded(123), cnt = { kid: 0, uncle: 0, granny: 0 };
+  for (let i = 0; i < 900; i++) cnt[pickPerson(rng, CFG).id]++;
+  check('毎回ランダムに 3人から選ばれる（どの人も 25〜42% ずつ）', Object.values(cnt).every(c => c > 225 && c < 378), JSON.stringify(cnt));
+  check('rng が 0 に近くても 1 に近くても範囲外にならない', pickPerson(() => 0, CFG).id === 'kid' && pickPerson(() => 0.9999999, CFG).id === 'granny');
+  check('人の指定（id）でそのまま始められる', newGame(CFG, { person: 'uncle' }).person.id === 'uncle');
+})();
+
+// ---- 3人の難しさ・エスカレートの手応え（同じ操作の人を各 3人にぶつける） ----
+(() => {
+  const ids = ['kid', 'uncle', 'granny'];
+  const JIT = 0.12, GREEDY = 0.10, SAFE = 0.30;
+  function trial(id, margin, n) {
+    const out = { score: [], bumps: [], stage: [], escaped: [] };
+    for (let s = 1; s <= n; s++) {
+      const r = runG({ person: PERS(id), rng: seeded(s * 7919 + 13) }, skilled(margin, PERS(id).ambush > 0, JIT, s), 61);
+      out.score.push(r.g.score); out.bumps.push(r.g.bumps); out.stage.push(r.g.maxStage); out.escaped.push(r.g.reason === 'escaped' ? 1 : 0);
+    }
+    return out;
+  }
+  const N = 16, skillT = {}, carefulT = {};
+  for (const id of ids) { skillT[id] = trial(id, GREEDY, N); carefulT[id] = trial(id, SAFE, N); }
+  for (const id of ids) info(PERS(id).name + '（ギリギリ狙い＝' + GREEDY + ' 秒前に引っ込む・ばらつき ±' + JIT + '）', '平均 ' + Math.round(mean(skillT[id].score)) + ' 点／最高段階 ' + mean(skillT[id].stage).toFixed(1) + '／叩かれた回数 ' + mean(skillT[id].bumps).toFixed(2) + '／逃げきり ' + Math.round(mean(skillT[id].escaped) * 100) + '%');
+  for (const id of ids) info(PERS(id).name + '（慎重＝' + SAFE + ' 秒前に引っ込む）', '平均 ' + Math.round(mean(carefulT[id].score)) + ' 点／最高段階 ' + mean(carefulT[id].stage).toFixed(1) + '／逃げきり ' + Math.round(mean(carefulT[id].escaped) * 100) + '%');
+  const means = ids.map(id => mean(skillT[id].score));
+  check('3人の難しさがそろっている（同じ操作で点の平均が 1.5 倍以内）', Math.max(...means) / Math.min(...means) <= 1.5, means.map(Math.round).join(' / '));
+  check('上手な操作なら、誰が相手でも 8 割以上は逃げきれる', ids.every(id => mean(skillT[id].escaped) >= 0.8), ids.map(id => mean(skillT[id].escaped).toFixed(2)).join(' / '));
+  check('ギリギリを狙う人ほど、怒りの段階が上がる（誰が相手でも）', ids.every(id => mean(skillT[id].stage) > mean(carefulT[id].stage) + 0.5), ids.map(id => mean(skillT[id].stage).toFixed(1) + ' vs ' + mean(carefulT[id].stage).toFixed(1)).join(' / '));
+  check('ギリギリを狙う方が、慎重より点が高い（欲張りが報われる）', ids.every(id => mean(skillT[id].score) > mean(carefulT[id].score) * 1.15), ids.map(id => Math.round(mean(skillT[id].score)) + ' vs ' + Math.round(mean(carefulT[id].score))).join(' / '));
+  check('上手な操作なら、誰が相手でも「激怒」以上まで怒らせられる（平均で段階 3 以上）', ids.every(id => mean(skillT[id].stage) >= 3), ids.map(id => mean(skillT[id].stage).toFixed(1)).join(' / '));
 })();
 const sumEl = document.getElementById('sum');
 sumEl.textContent = nNg === 0 ? ('全 ' + nOk + ' 件 PASS') : (nNg + ' 件 FAIL / ' + (nOk + nNg) + ' 件');

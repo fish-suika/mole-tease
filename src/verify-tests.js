@@ -8,10 +8,13 @@ function check(name, cond, why) {
 }
 const near = (x, y, e) => Math.abs(x - y) <= (e || 1e-9);
 const DT = 1 / 60;
+// Phase 1 の検証は「標準的な人（癖なし・怒りなし）」で行う
+const PLAIN = { id: 'plain', name: '標準', windupMul: 1, reaction: 0.28, stray: 0, feint: 0, ambush: 0, rageUp: 1, rageDown: 1 };
+const PO = { person: PLAIN, noRage: true };
 
 // bot(g, ev) が押す穴（なければ -1）を返す。終わるか seconds たつまで回す
 function run(bot, seconds) {
-  const g = newGame(CFG), evs = [];
+  const g = newGame(CFG, PO), evs = [];
   let last = [];
   for (let i = 0; i < Math.round(seconds / DT) && !g.over; i++) {
     const e = stepGame(g, DT, bot(g, last), CFG);
@@ -64,13 +67,13 @@ const hide = () => -1;
   const { g, evs } = run(holdHole(4), 3);
   const w = evs.find(e => e.type === 'windup'), i = evs.find(e => e.type === 'impact');
   check('顔を出し続けると人間が振りかぶる', !!w && w.hole === 4);
-  check('振りかぶりから振り下ろしまで予告の長さがある', (() => { const a = run(holdHole(4), 4); let tw = null, ts = null, k = 0; const g2 = newGame(CFG); for (let n = 0; n < 240; n++) { const e = stepGame(g2, DT, 4, CFG); for (const x of e) { if (x.type === 'windup' && tw === null) tw = g2.t; if (x.type === 'impact' && ts === null) ts = g2.t; } } return ts - tw >= CFG.human.windup + CFG.human.strike - 0.03 && ts - tw <= CFG.human.windup + CFG.human.strike + 0.03; })());
+  check('振りかぶりから振り下ろしまで予告の長さがある', (() => { const a = run(holdHole(4), 4); let tw = null, ts = null, k = 0; const g2 = newGame(CFG, PO); for (let n = 0; n < 240; n++) { const e = stepGame(g2, DT, 4, CFG); for (const x of e) { if (x.type === 'windup' && tw === null) tw = g2.t; if (x.type === 'impact' && ts === null) ts = g2.t; } } return ts - tw >= CFG.human.windup + CFG.human.strike - 0.03 && ts - tw <= CFG.human.windup + CFG.human.strike + 0.03; })());
   check('出たままだと叩かれる（当たり）', !!i && i.hit === true);
   check('当たるとたんこぶ 1 つ・イベントが出る', g.bumps >= 1 && evs.some(e => e.type === 'bump' && e.bumps === 1));
   const early = run(holdHole(4), 0.5);
   check('開始直後の待ちのあいだは狙わない', !early.evs.some(e => e.type === 'windup'));
   check('出てすぐ引っ込めば（気づく前に）狙われない', (() => {
-    const g2 = newGame(CFG); let n = 0, ev2 = [];
+    const g2 = newGame(CFG, PO); let n = 0, ev2 = [];
     for (; n < 60 * 2; n++) ev2 = ev2.concat(stepGame(g2, DT, -1, CFG));           // 2 秒（最初の待ち）隠れる
     for (n = 0; n < 8; n++) ev2 = ev2.concat(stepGame(g2, DT, 4, CFG));            // 0.13 秒出る
     for (n = 0; n < 120; n++) ev2 = ev2.concat(stepGame(g2, DT, -1, CFG));
@@ -92,7 +95,7 @@ function dodgeBot(d, hole) {
   };
 }
 function firstWhiff(d) {
-  const g = newGame(CFG), bot = dodgeBot(d, 4); let last = [];
+  const g = newGame(CFG, PO), bot = dodgeBot(d, 4); let last = [];
   for (let i = 0; i < 60 * 8 && !g.over; i++) { last = stepGame(g, DT, bot(g, last), CFG); const w = last.find(e => e.type === 'whiff'); if (w) return w; if (last.some(e => e.type === 'bump')) return null; }
   return null;
 }
@@ -107,19 +110,19 @@ function firstWhiff(d) {
   check('ギリギリの空振りの点は、基本の点より十分大きい（欲張りの理由になる）', late.pts >= CFG.score.whiffBase * 5, String(late.pts));
   check('ギリギリ度は 0〜1 に収まる', [early, mid, late].every(w => w.close >= 0 && w.close <= 1));
   check('ギリギリ度が高いほど言い方が強い', whiffLabel(0.9) === '紙一重！' && whiffLabel(0.5) === 'ギリギリ！' && whiffLabel(0.1) === 'スカッ');
-  check('引っ込んでから叩かれるまでの隙間が 0 ならギリギリ度 1', (() => { const g = newGame(CFG); const m = g.mole; m.exitTs[4] = 10; const hu = g.human; hu.phase = 'strike'; hu.t = CFG.human.strike - 0.001; hu.target = 4; m.hole = 4; m.h = 0; const e = humanStep(hu, 0.01, m, 10, CFG); return near(e[0].close, 1, 1e-9); })());
+  check('引っ込んでから叩かれるまでの隙間が 0 ならギリギリ度 1', (() => { const g = newGame(CFG, PO); const m = g.mole; m.exitTs[4] = 10; const hu = g.human; hu.phase = 'strike'; hu.t = CFG.human.strike - 0.001; hu.target = 4; m.hole = 4; m.h = 0; const e = humanStep(hu, 0.01, m, 10, CFG, { stage: 0, rng: Math.random }); return near(e[0].close, 1, 1e-9); })());
 })();
 
 // ---- 点数 ----
 (() => {
-  const g = newGame(CFG); g.human.wait = 99;     // 人間が動かない状態で点だけ測る
+  const g = newGame(CFG, PO); g.human.wait = 99;     // 人間が動かない状態で点だけ測る
   for (let i = 0; i < 60; i++) stepGame(g, DT, 4, CFG);
   check('出ている間だけ毎秒 pps 点が入る（1 秒で約 pps−出はじめの分）', g.score > CFG.score.pps * 0.8 && g.score <= CFG.score.pps + 1e-6, String(g.score));
-  const g2 = newGame(CFG); g2.human.wait = 99;
+  const g2 = newGame(CFG, PO); g2.human.wait = 99;
   for (let i = 0; i < 120; i++) stepGame(g2, DT, -1, CFG);
   check('隠れている間は点が入らない', g2.score === 0);
-  check('倍率がかかる（Phase 2 の怒りの倍率の土台）', (() => { const a = newGame(CFG), b = newGame(CFG); a.human.wait = b.human.wait = 99; b.mult = 3; for (let i = 0; i < 60; i++) { stepGame(a, DT, 4, CFG); stepGame(b, DT, 4, CFG); } return near(b.score / a.score, 3, 1e-6); })());
-  const g3 = newGame(CFG); g3.human.wait = 99;
+  check('倍率がかかる（Phase 2 の怒りの倍率の土台）', (() => { const a = newGame(CFG, PO), b = newGame(CFG, PO); a.human.wait = b.human.wait = 99; b.mult = 3; for (let i = 0; i < 60; i++) { stepGame(a, DT, 4, CFG); stepGame(b, DT, 4, CFG); } return near(b.score / a.score, 3, 1e-6); })());
+  const g3 = newGame(CFG, PO); g3.human.wait = 99;
   for (let i = 0; i < 3; i++) stepGame(g3, DT, 4, CFG);
   check('出はじめ（半分以下）の高さでは点が入らない', g3.score === 0, String(g3.score));
 })();

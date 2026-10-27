@@ -29,7 +29,14 @@
   #scoreBox{flex:1.5} #scoreBox b{color:#e8590c}
   #timeBox{flex:1}
   #timeBox.low b{color:#e03131}
+  #multBox{flex:.8;padding:0 calc(var(--u)*2)} #multBox b{font-size:calc(var(--u)*6.5)}
+  #multBox.m1{background:#fff3bf} #multBox.m2{background:#ffd8a8} #multBox.m3{background:#ffa8a8} #multBox.m4{background:#ff8787;color:#fff} #multBox.m5{background:#e03131;color:#fff;animation:glowHue 1s linear infinite}
+  #multBox.bump{animation:bump .35s ease-out}
+  @keyframes glowHue{0%{filter:hue-rotate(0)}100%{filter:hue-rotate(30deg)}}
   #bumpBox{flex:1.1}
+  #who{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + var(--u)*15);z-index:5;pointer-events:none;text-align:center;opacity:0;transition:opacity .4s}
+  #who.on{opacity:1}
+  #who span{display:inline-block;padding:calc(var(--u)*1) calc(var(--u)*4);border-radius:calc(var(--u)*4);background:rgba(20,16,24,.7);color:#fff;font-size:calc(var(--u)*4);font-weight:900;white-space:nowrap}
   .lump{display:inline-block;width:calc(var(--u)*5.4);height:calc(var(--u)*5.4);border-radius:50%;background:#e9ecef;border:calc(var(--u)*.6) solid #adb5bd}
   .lump.on{background:#ff8787;border-color:#e03131}
   #scoreBox.bump{animation:bump .3s ease-out}
@@ -41,7 +48,7 @@
   #mini{position:absolute;left:calc(var(--u)*3);bottom:calc(env(safe-area-inset-bottom) + var(--u)*3);z-index:5;pointer-events:none;display:grid;grid-template-columns:repeat(3,calc(var(--u)*4.4));gap:calc(var(--u)*1);padding:calc(var(--u)*1.6);border-radius:calc(var(--u)*2);background:rgba(20,16,24,.55);opacity:0;transition:opacity .2s}
   #mini.on{opacity:1}
   #mini i{display:block;height:calc(var(--u)*4.4);border-radius:50%;background:rgba(255,255,255,.25)}
-  #mini i.me{background:#ffd43b;box-shadow:0 0 calc(var(--u)*2) #ffd43b} #mini i.tg{background:#ff3b30}
+  #mini i.me{background:#ffd43b;box-shadow:0 0 calc(var(--u)*2) #ffd43b} #mini i.rc{background:#ff922b} #mini i.tg{background:#ff3b30}
   #tunnel{position:absolute;inset:0;z-index:3;pointer-events:none;background:radial-gradient(ellipse at 50% 55%,rgba(0,0,0,0) 52%,rgba(34,18,12,.55) 82%,rgba(20,10,6,.92) 100%);opacity:0}
   #danger{position:absolute;inset:0;z-index:4;pointer-events:none;box-shadow:inset 0 0 calc(var(--u)*26) calc(var(--u)*7) rgba(255,40,40,.95);opacity:0}
   #clock{position:absolute;left:calc(var(--u)*9);right:calc(var(--u)*9);top:calc(env(safe-area-inset-top) + var(--u)*15.5);height:calc(var(--u)*4.6);z-index:5;pointer-events:none;border-radius:calc(var(--u)*2.3);background:rgba(20,16,24,.72);box-shadow:0 2px 0 rgba(0,0,0,.25);overflow:hidden;opacity:0;transition:opacity .12s}
@@ -80,6 +87,7 @@
     <div class="row">
       <div class="chip" id="scoreBox"><small>点</small><b id="score">0</b></div>
       <div class="chip" id="timeBox"><small>残り</small><b id="time">60</b></div>
+      <div class="chip" id="multBox"><b id="mult">×1</b></div>
       <div class="chip" id="bumpBox"><span class="lump" id="lump0"></span><span class="lump" id="lump1"></span><span class="lump" id="lump2"></span></div>
     </div>
   </div>
@@ -89,6 +97,7 @@
   <div id="clockLab"><span class="ph">黄色いところで</span><span class="ph">離すと紙一重</span></div>
   <div id="mini"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="pops"></div>
+  <div id="who"><span id="whoName"></span></div>
   <div id="hint"><span class="ph">押している間だけ</span><span class="ph">顔を出す</span><br><span class="ph">ハンマーが来る前に</span><span class="ph">離せ</span></div>
 
   <div class="screen on" id="titleScr">
@@ -102,6 +111,7 @@
     <p>点</p>
     <div class="big" id="overScore">0</div>
     <div id="overNew">新記録！</div>
+    <p id="overWho"></p>
     <p class="nw" id="overStat"></p>
     <p class="nw" id="overBest"></p>
     <button class="btn" id="againBtn">もう一回</button>

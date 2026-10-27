@@ -16,6 +16,7 @@ cat src/verify-head.html \
     src/10-config.js \
     src/20-logic.js \
     src/verify-tests.js \
+    src/verify-tests-p2.js \
     src/verify-sum.js \
     src/99-tail.html > verify.html
 
