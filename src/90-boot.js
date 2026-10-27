@@ -10,7 +10,7 @@
   const W = createWorld(scene);
   const camera = new THREE.PerspectiveCamera(60, 9 / 16, 0.1, 80);
   const C = CFG.cam;
-  let shakeAmp = 0, peek = 0, camX = 0;
+  let shakeAmp = 0, peek = 0, camX = 0, tilt = 0, baseFov = 60;
   const holePts = Array.from({ length: 9 }, () => ({ x: 0, y: 0 }));
 
   function fit() {
@@ -19,7 +19,7 @@
     document.documentElement.style.setProperty('--u', stage.clientWidth / 100 + 'px');
     camera.aspect = w / h;
     const hf = C.hfov * Math.PI / 180;                       // 横の画角を一定にして縦の画角を決める（細い画面でも台が収まる）
-    camera.fov = 2 * Math.atan(Math.tan(hf / 2) / camera.aspect) * 180 / Math.PI;
+    camera.fov = baseFov = 2 * Math.atan(Math.tan(hf / 2) / camera.aspect) * 180 / Math.PI;
     camera.position.set(C.pos[0], C.pos[1], C.pos[2]);
     camera.lookAt(C.look[0], C.look[1], C.look[2]);
     camera.updateProjectionMatrix(); camera.updateMatrixWorld();
@@ -94,7 +94,8 @@
   function onEvents(evs) {
     for (const e of evs) {
       if (e.type === 'impact') {
-        shakeAmp = Math.max(shakeAmp, e.hit ? 0.28 : 0.12);
+        shakeAmp = Math.max(shakeAmp, e.hit ? 0.5 : 0.18);
+        if (e.hit) { const f = $('flash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); }
         const p = holePos(e.hole, CFG); spawnPuffs(W, p.x, p.z, e.hit ? 8 : 6);
       } else if (e.type === 'whiff') {
         if (e.close >= 0.7) pop(e.label + '<small>+' + e.pts + '</small>', 'great');
@@ -113,13 +114,22 @@
     const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs; simT += dt;
     if (state === 'play' && !freeze) { onEvents(stepGame(g, dt, press, CFG)); refreshHud(); }
     updateWorld(W, g, dt, simT);
-    // 出ている間は、出ている穴の真後ろへカメラが寄る（押す位置の判定は寄る前のカメラ基準のまま）
-    const P = CFG.peek, mp = holePos(g.mole.hole, CFG);
+    // 出ている間は一人称：出ている穴の、モグラの目の位置へカメラが降りる（押す位置の判定は俯瞰のカメラ基準のまま）
+    const P = CFG.fps, mp = holePos(g.mole.hole, CFG);
     peek += ((state === 'play' ? clamp(g.mole.h, 0, 1) * P.amt : 0) - peek) * (1 - Math.exp(-dt * P.rate));
     camX += (mp.x - camX) * (1 - Math.exp(-dt * P.rate));
     shakeAmp = Math.max(0, shakeAmp - dt * 1.4);
-    camera.position.set(lerp(C.pos[0], camX * P.xk, peek) + (Math.random() - 0.5) * shakeAmp, lerp(C.pos[1], P.y, peek) + (Math.random() - 0.5) * shakeAmp, lerp(C.pos[2], mp.z * P.zk + P.back, peek));
-    camera.lookAt(lerp(C.look[0], camX * P.lookXk, peek), lerp(C.look[1], P.lookY, peek), lerp(C.look[2], P.lookZ, peek));
+    const eyeY = P.eyeBase + P.eyeK * g.mole.h;
+    const sx = (Math.random() - 0.5) * shakeAmp, sy = (Math.random() - 0.5) * shakeAmp;
+    tilt += ((state === 'play' && (g.human.phase === 'windup' || g.human.phase === 'strike') && g.human.target === g.mole.hole ? 1 : 0) - tilt) * (1 - Math.exp(-dt * P.tiltRate));
+    const pitch = (P.pitch + P.windupPitch * tilt) * Math.PI / 180;
+    camera.position.set(lerp(C.pos[0], camX, peek) + sx, lerp(C.pos[1], eyeY, peek) + sy, lerp(C.pos[2], mp.z + P.back, peek));
+    camera.lookAt(lerp(C.look[0], camX * P.lookXk, peek), lerp(C.look[1], eyeY + P.lookDist * Math.tan(pitch), peek), lerp(C.look[2], mp.z - P.lookDist, peek));
+    const fov = lerp(baseFov, P.fov, peek);
+    if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+    W.fpsView = peek > P.hideAt;
+    const mini = $('mini'); mini.classList.toggle('on', state === 'play' && peek > 0.2);
+    if (state === 'play') { const cells = mini.children, hu = g.human, aim = hu.phase === 'windup' || hu.phase === 'strike' ? hu.target : -1; for (let i = 0; i < 9; i++) cells[i].className = i === aim ? 'tg' : i === g.mole.hole ? 'me' : ''; }
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

@@ -34,13 +34,14 @@ function buildMole() {
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.62, 24, 18), fur); body.scale.set(1, 1.2, 1); body.position.y = 0.62;
   const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 1.5, 24), fur); tube.position.y = -0.13;
   g.add(body, tube);
+  const shell = [body, tube];   // 一人称のとき隠す部分（鼻と手は残す）
   for (const s of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), fur); ear.position.set(s * 0.44, 1.2, 0.04); g.add(ear);
-    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), pink); inner.position.set(s * 0.44, 1.2, -0.08); g.add(inner);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), dark); eye.position.set(s * 0.24, 0.98, -0.53); g.add(eye);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), pink); hand.position.set(s * 0.52, 0.2, -0.5); hand.scale.set(1, 0.7, 1.2); g.add(hand);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), fur); ear.position.set(s * 0.44, 1.2, 0.04); g.add(ear); shell.push(ear);
+    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), pink); inner.position.set(s * 0.44, 1.2, -0.08); g.add(inner); shell.push(inner);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), dark); eye.position.set(s * 0.24, 0.98, -0.53); g.add(eye); shell.push(eye);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), pink); hand.position.set(s * 0.4, 0.66, -0.52); hand.scale.set(1, 0.7, 1.2); g.add(hand);
   }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), pink); nose.position.set(0, 0.82, -0.62); g.add(nose);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), pink); nose.position.set(0, 0.8, -0.64); g.add(nose);
   // 叩かれたときの星
   const stars = new THREE.Group(); stars.position.y = 1.75;
   for (let i = 0; i < 3; i++) {
@@ -48,7 +49,7 @@ function buildMole() {
     const a = i / 3 * Math.PI * 2; s.position.set(Math.cos(a) * 0.55, 0, Math.sin(a) * 0.55); stars.add(s);
   }
   stars.visible = false; g.add(stars);
-  g.userData.stars = stars;
+  g.userData.stars = stars; g.userData.shell = shell;
   return g;
 }
 
@@ -109,7 +110,7 @@ function createWorld(scene) {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 30), lm(0x2b1d3f)); floor.rotation.x = -Math.PI / 2; floor.position.y = -3.4; scene.add(floor);
 
   scene.add(buildTable());
-  const W = { holes: [], rims: [], moleG: null, human: null, hammer: null, shadow: null, pose: { x: 0, y: 2.2, z: -1.4, tilt: -0.3, s: 1 }, from: null, key: '', puffs: [], shakeReq: 0 };
+  const W = { holes: [], rims: [], moleG: null, human: null, hammer: null, shadow: null, pose: { x: 0, y: 2.2, z: -1.4, tilt: -0.3, s: 1 }, from: null, key: '', puffs: [], shakeReq: 0, fpsView: false };
 
   for (let i = 0; i < 9; i++) {
     const p = holePos(i, CFG);
@@ -146,7 +147,7 @@ function hammerGoal(kind, target) {
   if (kind === 'rest') return { x: 2.3, y: 1.3, z: -3.3, tilt: -0.25 };
   const p = holePos(target, CFG);
   if (kind === 'raised') return { x: p.x, y: 5.6, z: p.z - 0.5, tilt: -0.85 };
-  return { x: p.x, y: 0.0, z: p.z, tilt: 0.12 };            // strike
+  return { x: p.x, y: 0.0, z: p.z - 0.35, tilt: 0.12 };            // strike
 }
 const mixPose = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t), tilt: lerp(a.tilt, b.tilt, t) });
 
@@ -168,6 +169,7 @@ function updateWorld(W, g, dt, now) {
   stars.visible = m.stun > 0; stars.rotation.y = now * 9;
   stars.position.y = 1.75 + 0.15 * Math.sin(now * 12);
   if (m.stun > 0) mg.visible = true;
+  for (const part of mg.userData.shell) part.visible = !W.fpsView;
 
   // --- ハンマー ---
   const key = hu.seq;

@@ -35,6 +35,13 @@
   #scoreBox.bump{animation:bump .3s ease-out}
   @keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.2)}100%{transform:scale(1)}}
 
+  #flash{position:absolute;inset:0;z-index:4;pointer-events:none;background:radial-gradient(circle,rgba(255,255,255,.9),rgba(255,70,70,.8));opacity:0}
+  #flash.on{animation:flash .45s ease-out}
+  @keyframes flash{0%{opacity:.95}100%{opacity:0}}
+  #mini{position:absolute;left:calc(var(--u)*3);bottom:calc(env(safe-area-inset-bottom) + var(--u)*3);z-index:5;pointer-events:none;display:grid;grid-template-columns:repeat(3,calc(var(--u)*4.4));gap:calc(var(--u)*1);padding:calc(var(--u)*1.6);border-radius:calc(var(--u)*2);background:rgba(20,16,24,.55);opacity:0;transition:opacity .2s}
+  #mini.on{opacity:1}
+  #mini i{display:block;height:calc(var(--u)*4.4);border-radius:50%;background:rgba(255,255,255,.25)}
+  #mini i.me{background:#ffd43b;box-shadow:0 0 calc(var(--u)*2) #ffd43b} #mini i.tg{background:#ff3b30}
   #pops{position:absolute;left:50%;top:38%;z-index:6;pointer-events:none}
   .pop{position:absolute;left:0;transform:translateX(-50%);font-size:calc(var(--u)*11);font-weight:900;white-space:nowrap;-webkit-text-stroke:calc(var(--u)*.8) #fff;paint-order:stroke fill;animation:floatUp 1.1s ease-out forwards}
   .pop small{display:block;text-align:center;font-size:.6em}
@@ -68,6 +75,8 @@
       <div class="chip" id="bumpBox"><span class="lump" id="lump0"></span><span class="lump" id="lump1"></span><span class="lump" id="lump2"></span></div>
     </div>
   </div>
+  <div id="flash"></div>
+  <div id="mini"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="pops"></div>
   <div id="hint"><span class="ph">押している間だけ</span><span class="ph">顔を出す</span><br><span class="ph">ハンマーが来る前に</span><span class="ph">離せ</span></div>
 
@@ -124,8 +133,9 @@ const CFG = {
   },
   // カメラ：モグラの目の高さ。台の手前の端から奥の人間を見上げる／少し見下ろす
   cam: { pos: [0, 6.0, 7.2], look: [0, 2.4, -1.6], hfov: 48 },
-  // モグラが出ている間、カメラが出ている穴の真後ろへ寄って低くなる（人間を見上げる＝モグラ側の絵）。amt＝寄せの強さ（0 で無効）
-  peek: { amt: 1, y: 3.8, back: 5.0, zk: 0.6, xk: 0.9, lookY: 2.1, lookZ: -3.6, lookXk: 0.7, rate: 7 },
+  // モグラが出ている間は一人称視点：カメラがモグラの目の位置へ降りる（引っ込むと元の俯瞰）。amt＝0 で無効
+  // eyeBase＋eyeK×高さ＝目の高さ、back＝穴の中心より後ろへ、pitch＝見上げる角度（度）、windupPitch＝振りかぶりのあいだ頭上のハンマーを見上げる分（度）、hideAt＝この寄り具合を超えたらモグラの体を隠す（鼻と手だけ残す）
+  fps: { amt: 1, eyeBase: 0.08, eyeK: 0.92, back: 0.45, pitch: 11, lookDist: 10, lookXk: 0.25, rate: 9, hideAt: 0.35, fov: 84, windupPitch: 42, tiltRate: 6 },
 };
 // ===== 判定・点数・人間の動き（three.js を使わない純粋ロジック） =====
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -289,13 +299,14 @@ function buildMole() {
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.62, 24, 18), fur); body.scale.set(1, 1.2, 1); body.position.y = 0.62;
   const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 1.5, 24), fur); tube.position.y = -0.13;
   g.add(body, tube);
+  const shell = [body, tube];   // 一人称のとき隠す部分（鼻と手は残す）
   for (const s of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), fur); ear.position.set(s * 0.44, 1.2, 0.04); g.add(ear);
-    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), pink); inner.position.set(s * 0.44, 1.2, -0.08); g.add(inner);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), dark); eye.position.set(s * 0.24, 0.98, -0.53); g.add(eye);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), pink); hand.position.set(s * 0.52, 0.2, -0.5); hand.scale.set(1, 0.7, 1.2); g.add(hand);
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), fur); ear.position.set(s * 0.44, 1.2, 0.04); g.add(ear); shell.push(ear);
+    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), pink); inner.position.set(s * 0.44, 1.2, -0.08); g.add(inner); shell.push(inner);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), dark); eye.position.set(s * 0.24, 0.98, -0.53); g.add(eye); shell.push(eye);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), pink); hand.position.set(s * 0.4, 0.66, -0.52); hand.scale.set(1, 0.7, 1.2); g.add(hand);
   }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), pink); nose.position.set(0, 0.82, -0.62); g.add(nose);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), pink); nose.position.set(0, 0.8, -0.64); g.add(nose);
   // 叩かれたときの星
   const stars = new THREE.Group(); stars.position.y = 1.75;
   for (let i = 0; i < 3; i++) {
@@ -303,7 +314,7 @@ function buildMole() {
     const a = i / 3 * Math.PI * 2; s.position.set(Math.cos(a) * 0.55, 0, Math.sin(a) * 0.55); stars.add(s);
   }
   stars.visible = false; g.add(stars);
-  g.userData.stars = stars;
+  g.userData.stars = stars; g.userData.shell = shell;
   return g;
 }
 
@@ -364,7 +375,7 @@ function createWorld(scene) {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 30), lm(0x2b1d3f)); floor.rotation.x = -Math.PI / 2; floor.position.y = -3.4; scene.add(floor);
 
   scene.add(buildTable());
-  const W = { holes: [], rims: [], moleG: null, human: null, hammer: null, shadow: null, pose: { x: 0, y: 2.2, z: -1.4, tilt: -0.3, s: 1 }, from: null, key: '', puffs: [], shakeReq: 0 };
+  const W = { holes: [], rims: [], moleG: null, human: null, hammer: null, shadow: null, pose: { x: 0, y: 2.2, z: -1.4, tilt: -0.3, s: 1 }, from: null, key: '', puffs: [], shakeReq: 0, fpsView: false };
 
   for (let i = 0; i < 9; i++) {
     const p = holePos(i, CFG);
@@ -401,7 +412,7 @@ function hammerGoal(kind, target) {
   if (kind === 'rest') return { x: 2.3, y: 1.3, z: -3.3, tilt: -0.25 };
   const p = holePos(target, CFG);
   if (kind === 'raised') return { x: p.x, y: 5.6, z: p.z - 0.5, tilt: -0.85 };
-  return { x: p.x, y: 0.0, z: p.z, tilt: 0.12 };            // strike
+  return { x: p.x, y: 0.0, z: p.z - 0.35, tilt: 0.12 };            // strike
 }
 const mixPose = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t), tilt: lerp(a.tilt, b.tilt, t) });
 
@@ -423,6 +434,7 @@ function updateWorld(W, g, dt, now) {
   stars.visible = m.stun > 0; stars.rotation.y = now * 9;
   stars.position.y = 1.75 + 0.15 * Math.sin(now * 12);
   if (m.stun > 0) mg.visible = true;
+  for (const part of mg.userData.shell) part.visible = !W.fpsView;
 
   // --- ハンマー ---
   const key = hu.seq;
@@ -509,7 +521,7 @@ function updateWorld(W, g, dt, now) {
   const W = createWorld(scene);
   const camera = new THREE.PerspectiveCamera(60, 9 / 16, 0.1, 80);
   const C = CFG.cam;
-  let shakeAmp = 0, peek = 0, camX = 0;
+  let shakeAmp = 0, peek = 0, camX = 0, tilt = 0, baseFov = 60;
   const holePts = Array.from({ length: 9 }, () => ({ x: 0, y: 0 }));
 
   function fit() {
@@ -518,7 +530,7 @@ function updateWorld(W, g, dt, now) {
     document.documentElement.style.setProperty('--u', stage.clientWidth / 100 + 'px');
     camera.aspect = w / h;
     const hf = C.hfov * Math.PI / 180;                       // 横の画角を一定にして縦の画角を決める（細い画面でも台が収まる）
-    camera.fov = 2 * Math.atan(Math.tan(hf / 2) / camera.aspect) * 180 / Math.PI;
+    camera.fov = baseFov = 2 * Math.atan(Math.tan(hf / 2) / camera.aspect) * 180 / Math.PI;
     camera.position.set(C.pos[0], C.pos[1], C.pos[2]);
     camera.lookAt(C.look[0], C.look[1], C.look[2]);
     camera.updateProjectionMatrix(); camera.updateMatrixWorld();
@@ -593,7 +605,8 @@ function updateWorld(W, g, dt, now) {
   function onEvents(evs) {
     for (const e of evs) {
       if (e.type === 'impact') {
-        shakeAmp = Math.max(shakeAmp, e.hit ? 0.28 : 0.12);
+        shakeAmp = Math.max(shakeAmp, e.hit ? 0.5 : 0.18);
+        if (e.hit) { const f = $('flash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); }
         const p = holePos(e.hole, CFG); spawnPuffs(W, p.x, p.z, e.hit ? 8 : 6);
       } else if (e.type === 'whiff') {
         if (e.close >= 0.7) pop(e.label + '<small>+' + e.pts + '</small>', 'great');
@@ -612,13 +625,22 @@ function updateWorld(W, g, dt, now) {
     const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs; simT += dt;
     if (state === 'play' && !freeze) { onEvents(stepGame(g, dt, press, CFG)); refreshHud(); }
     updateWorld(W, g, dt, simT);
-    // 出ている間は、出ている穴の真後ろへカメラが寄る（押す位置の判定は寄る前のカメラ基準のまま）
-    const P = CFG.peek, mp = holePos(g.mole.hole, CFG);
+    // 出ている間は一人称：出ている穴の、モグラの目の位置へカメラが降りる（押す位置の判定は俯瞰のカメラ基準のまま）
+    const P = CFG.fps, mp = holePos(g.mole.hole, CFG);
     peek += ((state === 'play' ? clamp(g.mole.h, 0, 1) * P.amt : 0) - peek) * (1 - Math.exp(-dt * P.rate));
     camX += (mp.x - camX) * (1 - Math.exp(-dt * P.rate));
     shakeAmp = Math.max(0, shakeAmp - dt * 1.4);
-    camera.position.set(lerp(C.pos[0], camX * P.xk, peek) + (Math.random() - 0.5) * shakeAmp, lerp(C.pos[1], P.y, peek) + (Math.random() - 0.5) * shakeAmp, lerp(C.pos[2], mp.z * P.zk + P.back, peek));
-    camera.lookAt(lerp(C.look[0], camX * P.lookXk, peek), lerp(C.look[1], P.lookY, peek), lerp(C.look[2], P.lookZ, peek));
+    const eyeY = P.eyeBase + P.eyeK * g.mole.h;
+    const sx = (Math.random() - 0.5) * shakeAmp, sy = (Math.random() - 0.5) * shakeAmp;
+    tilt += ((state === 'play' && (g.human.phase === 'windup' || g.human.phase === 'strike') && g.human.target === g.mole.hole ? 1 : 0) - tilt) * (1 - Math.exp(-dt * P.tiltRate));
+    const pitch = (P.pitch + P.windupPitch * tilt) * Math.PI / 180;
+    camera.position.set(lerp(C.pos[0], camX, peek) + sx, lerp(C.pos[1], eyeY, peek) + sy, lerp(C.pos[2], mp.z + P.back, peek));
+    camera.lookAt(lerp(C.look[0], camX * P.lookXk, peek), lerp(C.look[1], eyeY + P.lookDist * Math.tan(pitch), peek), lerp(C.look[2], mp.z - P.lookDist, peek));
+    const fov = lerp(baseFov, P.fov, peek);
+    if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+    W.fpsView = peek > P.hideAt;
+    const mini = $('mini'); mini.classList.toggle('on', state === 'play' && peek > 0.2);
+    if (state === 'play') { const cells = mini.children, hu = g.human, aim = hu.phase === 'windup' || hu.phase === 'strike' ? hu.target : -1; for (let i = 0; i < 9; i++) cells[i].className = i === aim ? 'tg' : i === g.mole.hole ? 'me' : ''; }
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

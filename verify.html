@@ -54,8 +54,9 @@ const CFG = {
   },
   // カメラ：モグラの目の高さ。台の手前の端から奥の人間を見上げる／少し見下ろす
   cam: { pos: [0, 6.0, 7.2], look: [0, 2.4, -1.6], hfov: 48 },
-  // モグラが出ている間、カメラが出ている穴の真後ろへ寄って低くなる（人間を見上げる＝モグラ側の絵）。amt＝寄せの強さ（0 で無効）
-  peek: { amt: 1, y: 3.8, back: 5.0, zk: 0.6, xk: 0.9, lookY: 2.1, lookZ: -3.6, lookXk: 0.7, rate: 7 },
+  // モグラが出ている間は一人称視点：カメラがモグラの目の位置へ降りる（引っ込むと元の俯瞰）。amt＝0 で無効
+  // eyeBase＋eyeK×高さ＝目の高さ、back＝穴の中心より後ろへ、pitch＝見上げる角度（度）、windupPitch＝振りかぶりのあいだ頭上のハンマーを見上げる分（度）、hideAt＝この寄り具合を超えたらモグラの体を隠す（鼻と手だけ残す）
+  fps: { amt: 1, eyeBase: 0.08, eyeK: 0.92, back: 0.45, pitch: 11, lookDist: 10, lookXk: 0.25, rate: 9, hideAt: 0.35, fov: 84, windupPitch: 42, tiltRate: 6 },
 };
 // ===== 判定・点数・人間の動き（three.js を使わない純粋ロジック） =====
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
