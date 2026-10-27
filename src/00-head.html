@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>叩かれないモグラ</title>
+<style>
+  :root{--u:3.75px;--ink:#2b2433;--bg:#4a2f6b;--jp:"Hiragino Kaku Gothic ProN","Yu Gothic","YuGothic","Meiryo","Noto Sans JP",sans-serif}
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;overflow:hidden;background:#141018;color:var(--ink);font-family:var(--jp);touch-action:none;user-select:none;-webkit-user-select:none;overscroll-behavior:none;-webkit-touch-callout:none}
+  html,body{height:100vh;height:100dvh}
+  body{word-break:auto-phrase;overflow-wrap:anywhere;line-break:strict}
+  p,h1,h2{text-wrap:balance}
+  button{font-family:var(--jp);touch-action:manipulation;cursor:pointer}
+  .nw{white-space:nowrap}
+  .ph{display:inline-block}
+
+  #stage{position:fixed;top:0;height:100vh;left:50%;transform:translateX(-50%);width:min(100vw,56.25vh);overflow:hidden;background:var(--bg);box-shadow:0 0 0 1px rgba(255,255,255,.08),0 0 60px rgba(0,0,0,.7);touch-action:none}
+  @supports (height:100dvh){#stage{height:100dvh;width:min(100vw,56.25dvh)}}
+  #view{position:absolute;inset:0;overflow:hidden}
+  #view canvas{display:block;width:100%;height:100%}
+
+  #hud{position:absolute;left:0;right:0;top:0;z-index:5;pointer-events:none;padding:calc(env(safe-area-inset-top) + var(--u)*2.5) calc(var(--u)*3) 0;opacity:0;transition:opacity .25s}
+  #hud.on{opacity:1}
+  .row{display:flex;gap:calc(var(--u)*2);align-items:stretch}
+  .chip{display:flex;align-items:center;justify-content:center;gap:calc(var(--u)*1.4);padding:0 calc(var(--u)*3);height:calc(var(--u)*10);border-radius:calc(var(--u)*3);background:rgba(255,255,255,.9);box-shadow:0 2px 0 rgba(0,0,0,.2);font-weight:900;line-height:1.1;white-space:nowrap}
+  .chip small{font-size:calc(var(--u)*2.8);letter-spacing:.1em;opacity:.65;font-weight:700}
+  .chip b{font-size:calc(var(--u)*6.5);font-variant-numeric:tabular-nums}
+  #scoreBox{flex:1.5} #scoreBox b{color:#e8590c}
+  #timeBox{flex:1}
+  #timeBox.low b{color:#e03131}
+  #bumpBox{flex:1.1}
+  .lump{display:inline-block;width:calc(var(--u)*5.4);height:calc(var(--u)*5.4);border-radius:50%;background:#e9ecef;border:calc(var(--u)*.6) solid #adb5bd}
+  .lump.on{background:#ff8787;border-color:#e03131}
+  #scoreBox.bump{animation:bump .3s ease-out}
+  @keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.2)}100%{transform:scale(1)}}
+
+  #pops{position:absolute;left:50%;top:38%;z-index:6;pointer-events:none}
+  .pop{position:absolute;left:0;transform:translateX(-50%);font-size:calc(var(--u)*11);font-weight:900;white-space:nowrap;-webkit-text-stroke:calc(var(--u)*.8) #fff;paint-order:stroke fill;animation:floatUp 1.1s ease-out forwards}
+  .pop small{display:block;text-align:center;font-size:.6em}
+  .pop.near{color:#e8590c;font-size:calc(var(--u)*13)} .pop.great{color:#d6336c;font-size:calc(var(--u)*15)} .pop.miss{color:#7048e8;font-size:calc(var(--u)*9)} .pop.bad{color:#e03131}
+  @keyframes floatUp{0%{opacity:0;margin-top:calc(var(--u)*3);scale:.6}15%{opacity:1;scale:1.15}30%{scale:1}100%{opacity:0;margin-top:calc(var(--u)*-16)}}
+
+  #hint{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + var(--u)*8);z-index:5;pointer-events:none;text-align:center;color:#fff;font-size:calc(var(--u)*4.6);font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.8);opacity:0;transition:opacity .3s;line-height:1.5}
+  #hint.on{opacity:1}
+
+  .screen{position:absolute;inset:0;z-index:10;display:none;flex-direction:column;align-items:center;justify-content:safe center;gap:calc(var(--u)*4);padding:calc(var(--u)*8);background:rgba(20,14,30,.72);color:#fff;text-align:center;overflow:auto}
+  .screen.on{display:flex}
+  .screen h1{font-size:calc(var(--u)*11);font-weight:900;line-height:1.25;text-shadow:0 3px 0 rgba(0,0,0,.4)}
+  .screen h2{font-size:calc(var(--u)*8);font-weight:900}
+  .screen p{font-size:calc(var(--u)*4.4);line-height:1.7;font-weight:700}
+  #overNew{display:none;padding:calc(var(--u)*1) calc(var(--u)*5);border-radius:calc(var(--u)*5);background:#ff6b6b;color:#fff;font-weight:900;font-size:calc(var(--u)*5);animation:bump .5s ease-out}
+  #overNew.on{display:block}
+  .sbtn{border:1px solid rgba(255,255,255,.45);background:transparent;color:#fff;border-radius:calc(var(--u)*4);padding:calc(var(--u)*1.8) calc(var(--u)*6);font-size:calc(var(--u)*3.8);font-weight:700}
+  .sbtn:active{background:rgba(255,255,255,.15)}
+  .big{font-size:calc(var(--u)*22);font-weight:900;color:#ffd43b;line-height:1;font-variant-numeric:tabular-nums}
+  .btn{border:0;border-radius:calc(var(--u)*5);padding:calc(var(--u)*3.4) calc(var(--u)*10);font-size:calc(var(--u)*6);font-weight:900;background:#ffd43b;color:#3b2a00;box-shadow:0 calc(var(--u)*1) 0 #c99a00}
+  .btn:active{transform:translateY(2px);box-shadow:0 calc(var(--u)*.4) 0 #c99a00}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="view"></div>
+  <div id="hud">
+    <div class="row">
+      <div class="chip" id="scoreBox"><small>点</small><b id="score">0</b></div>
+      <div class="chip" id="timeBox"><small>残り</small><b id="time">60</b></div>
+      <div class="chip" id="bumpBox"><span class="lump" id="lump0"></span><span class="lump" id="lump1"></span><span class="lump" id="lump2"></span></div>
+    </div>
+  </div>
+  <div id="pops"></div>
+  <div id="hint"><span class="ph">押している間だけ</span><span class="ph">顔を出す</span><br><span class="ph">ハンマーが来る前に</span><span class="ph">離せ</span></div>
+
+  <div class="screen on" id="titleScr">
+    <h1><span class="ph">叩かれない</span><span class="ph">モグラ</span></h1>
+    <p><span class="ph">モグラ叩きを、</span><span class="ph">モグラ側で。</span><br><span class="ph">ギリギリで引っ込んで、</span><span class="ph">人間をムキにさせろ。</span></p>
+    <p class="nw">自己ベスト <b id="titleBest">0</b> 点</p>
+    <button class="btn" id="startBtn">はじめる</button>
+  </div>
+  <div class="screen" id="overScr">
+    <h2 id="overTitle">逃げきり！</h2>
+    <p>点</p>
+    <div class="big" id="overScore">0</div>
+    <div id="overNew">新記録！</div>
+    <p class="nw" id="overStat"></p>
+    <p class="nw" id="overBest"></p>
+    <button class="btn" id="againBtn">もう一回</button>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
