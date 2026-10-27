@@ -67,7 +67,8 @@
   #pops{position:absolute;left:50%;top:38%;z-index:6;pointer-events:none}
   .pop{position:absolute;left:0;transform:translateX(-50%);font-size:calc(var(--u)*11);font-weight:900;white-space:nowrap;-webkit-text-stroke:calc(var(--u)*.8) #fff;paint-order:stroke fill;animation:floatUp 1.1s ease-out forwards}
   .pop small{display:block;text-align:center;font-size:.6em}
-  .pop.rage{color:#e03131;font-size:calc(var(--u)*14);top:calc(var(--u)*-14)} .pop.near{color:#e8590c;font-size:calc(var(--u)*13)} .pop.great{color:#d6336c;font-size:calc(var(--u)*15)} .pop.miss{color:#7048e8;font-size:calc(var(--u)*9)} .pop.bad{color:#e03131}
+  #popsStage{position:absolute;left:50%;top:21%;z-index:6;pointer-events:none}
+  .pop.rage{color:#e03131;font-size:calc(var(--u)*9)} .pop.cool{color:#1c7ed6;font-size:calc(var(--u)*7.5)} .pop.near{color:#e8590c;font-size:calc(var(--u)*13)} .pop.great{color:#d6336c;font-size:calc(var(--u)*15)} .pop.miss{color:#7048e8;font-size:calc(var(--u)*9)} .pop.bad{color:#e03131}
   @keyframes floatUp{0%{opacity:0;margin-top:calc(var(--u)*3);scale:.6}15%{opacity:1;scale:1.15}30%{scale:1}100%{opacity:0;margin-top:calc(var(--u)*-16)}}
 
   #hint{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + var(--u)*8);z-index:5;pointer-events:none;text-align:center;color:#fff;font-size:calc(var(--u)*4.6);font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.8);opacity:0;transition:opacity .3s;line-height:1.5}
@@ -104,7 +105,7 @@
   <div id="clock"><div id="clockZone"></div><div id="clockFill"></div></div>
   <div id="clockLab"><span class="ph">黄色いところで</span><span class="ph">離すと紙一重</span></div>
   <div id="mini"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-  <div id="pops"></div>
+  <div id="pops"></div><div id="popsStage"></div>
   <div id="who"><span id="whoName"></span></div>
   <div id="hint"><span class="ph">押している間だけ</span><span class="ph">顔を出す</span><br><span class="ph">ハンマーが来る前に</span><span class="ph">離せ</span></div>
 

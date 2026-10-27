@@ -31,7 +31,7 @@ const CFG = {
     recoverAmbush: 0.25,  // 待ち伏せをあきらめたあと
   },
   // 怒り（0〜max）：空振りで上がる（ギリギリなほど大きく）、時間でさめる、叩くと少し下がる。段階は th 以上で上がり、点の倍率＝段階（×1〜×5）
-  rage: { max: 100, whiffBase: 2, whiffNear: 15, decay: 3.2, hitDrop: 15 },
+  rage: { max: 100, whiffBase: 0.5, whiffNear: 6.5 },   // 時間ではさめない。叩かれたら persons の hitKeep 倍に下がる（0＝リセット）
   stages: [
     { name: '平静', th: 0,  windupMul: 1.0,  feint: 0,    reach: 0, hammers: 1, scale: 1 },
     { name: 'むっ', th: 18, windupMul: 0.88, feint: 0,    reach: 0, hammers: 1, scale: 1 },
@@ -39,11 +39,12 @@ const CFG = {
     { name: '激怒', th: 68, windupMul: 0.75, feint: 0.18, reach: 1, hammers: 1, scale: 1.7 },   // 巨大ハンマー：左右の隣の穴まで届く
     { name: '錯乱', th: 88, windupMul: 0.75, feint: 0.22, reach: 1, hammers: 2, scale: 1.7 },   // 2本同時
   ],
-  // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、stray＝隣を叩く率、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp/rageDown＝怒りの上がりやすさ・さめやすさ
+  // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、missMul＝空振り後の立ち直りの倍率（小さいほどすぐ次を叩く）、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp＝怒りの上がりやすさ、hitKeep＝叩いたあとに残る怒りの割合（0＝すっきりリセット）
+  // stray＝隣の穴を叩く率（使っていない。バグに見えるので子どもの癖としては外した。検証用に残してある）
   persons: [
-    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.22, stray: 0.12, feint: 0,    ambush: 0,   rageUp: 1.3, rageDown: 1.5 },
-    { id: 'uncle',  name: '負けず嫌いのおじさん', windupMul: 1.0,  reaction: 0.30, stray: 0,    feint: 0.22, ambush: 0,   rageUp: 1.0, rageDown: 0.55 },
-    { id: 'granny', name: '正確なおばあちゃん',   windupMul: 1.1,  reaction: 0.30, stray: 0,    feint: 0,    ambush: 1.3, rageUp: 1.35, rageDown: 1.0 },
+    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.26, stray: 0, missMul: 0.85,  feint: 0,   ambush: 0,   rageUp: 1.1,  hitKeep: 0 },
+    { id: 'uncle',  name: '負けず嫌いのおじさん', windupMul: 1.0,  reaction: 0.30, stray: 0, missMul: 1,   feint: 0.22, ambush: 0,   rageUp: 1.0,  hitKeep: 0.4 },
+    { id: 'granny', name: '正確なおばあちゃん',   windupMul: 1.1,  reaction: 0.30, stray: 0, missMul: 1,   feint: 0,    ambush: 1.3, rageUp: 1.35, hitKeep: 0 },
   ],
   score: {
     pps: 100,             // 顔を出している間の毎秒の点

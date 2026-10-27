@@ -51,9 +51,12 @@
     $('mult').textContent = '×' + g.mult; $('multBox').className = 'chip m' + g.mult + ($('multBox').classList.contains('bump') ? ' bump' : '');
     $('titleBest').textContent = best;
   }
-  function pop(html, cls) {
+  // 表示は 2 か所：main（空振り・叩かれた）と stage（怒りの段階）。同じ場所に出すときは前のものを消す（文字が重ならないように）
+  function pop(html, cls, slot) {
+    const box = $(slot === 'stage' ? 'popsStage' : 'pops');
+    while (box.firstChild) box.firstChild.remove();
     const d = document.createElement('div'); d.className = 'pop ' + cls; d.innerHTML = html;
-    $('pops').appendChild(d); setTimeout(() => d.remove(), 1150);
+    box.appendChild(d); setTimeout(() => d.remove(), 1150);
   }
   {   // タイミングバーの帯：引っ込むのに掛かる時間を見込んで、ギリギリ度が zoneNear 以上になる離し方〜当たる直前まで
     const Z = releaseZone(CFG), total = Z.total, from = Z.from, to = Z.to, zone = $('clockZone');
@@ -113,7 +116,8 @@
         $('scoreBox').classList.remove('bump'); void $('scoreBox').offsetWidth; $('scoreBox').classList.add('bump');
       } else if (e.type === 'stage') {
         shakeAmp = Math.max(shakeAmp, 0.35);
-        if (e.stage > e.from) { pop(CFG.stages[e.stage].name + '！<small>点が ×' + (e.stage + 1) + '</small>', 'rage'); const rn = $('rageName'); rn.classList.remove('bump'); void rn.offsetWidth; rn.classList.add('bump'); }
+        if (e.stage < e.from) pop('すっきり<small>×' + (e.stage + 1) + ' にもどった</small>', 'cool', 'stage');
+        if (e.stage > e.from) { pop(CFG.stages[e.stage].name + '！<small>点が ×' + (e.stage + 1) + '</small>', 'rage', 'stage'); const rn = $('rageName'); rn.classList.remove('bump'); void rn.offsetWidth; rn.classList.add('bump'); }
         if (e.stage > e.from) { const b = $('multBox'); b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
       } else if (e.type === 'bump') {
         pop('ピコッ！', 'bad');

@@ -9,7 +9,7 @@ function check(name, cond, why) {
 const near = (x, y, e) => Math.abs(x - y) <= (e || 1e-9);
 const DT = 1 / 60;
 // Phase 1 の検証は「標準的な人（癖なし・怒りなし）」で行う
-const PLAIN = { id: 'plain', name: '標準', windupMul: 1, reaction: 0.28, stray: 0, feint: 0, ambush: 0, rageUp: 1, rageDown: 1 };
+const PLAIN = { id: 'plain', name: '標準', windupMul: 1, reaction: 0.28, stray: 0, feint: 0, ambush: 0, rageUp: 1, hitKeep: 0 };
 const PO = { person: PLAIN, noRage: true };
 
 // bot(g, ev) が押す穴（なければ -1）を返す。終わるか seconds たつまで回す

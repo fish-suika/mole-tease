@@ -124,7 +124,7 @@ function humanStep(hu, dt, m, now, CFG, ctx) {
       if (hit) { goPhase(hu, 'recover', 'happy'); hu.recover = Hc.recoverHit; }
       else if (!stray && P.ambush > 0) goPhase(hu, 'ambush', 'aim');
       else if (stray) { goPhase(hu, 'recover', 'confuse'); hu.recover = Hc.recoverStray; }
-      else { goPhase(hu, 'recover', 'miss'); hu.recover = Hc.recoverMiss; }
+      else { goPhase(hu, 'recover', 'miss'); hu.recover = Hc.recoverMiss * (P.missMul || 1); }   // せっかちな子どもは空振りしてもすぐ次を叩く
     }
   } else if (hu.phase === 'recover') {
     if (hu.t >= hu.recover) { goPhase(hu, 'idle', 'calm'); hu.wait = Hc.idleWait; hu.target2 = -1; }
@@ -159,13 +159,12 @@ function stepGame(g, dt, press, CFG) {
   const m = g.mole, R = CFG.rage, P = g.person;
   moleStep(m, dt, press, g.t, CFG);
   if (m.stun <= 0 && m.h >= CFG.score.scoreH) g.score += CFG.score.pps * g.mult * dt;
-  if (!g.noRage) g.rage = Math.max(0, g.rage - R.decay * P.rageDown * dt);   // 怒りは時間でさめていく（人ごとに速さがちがう）
   for (const e of humanStep(g.human, dt, m, g.t, CFG, { stage: g.stage, rng: g.rng })) {
     ev.push(e);
     if (e.type !== 'impact') continue;
     if (e.hit) {
       g.bumps++; m.stun = CFG.mole.stunTime; m.hitT = 0;
-      if (!g.noRage) g.rage = Math.max(0, g.rage - R.hitDrop);              // 叩くとすっきりする
+      if (!g.noRage) g.rage *= P.hitKeep;                                    // 叩くとすっきりする（時間ではさめない。叩いたときだけ下がる）
       ev.push({ type: 'bump', bumps: g.bumps, hole: e.hole });
     } else if (e.stray) {
       ev.push({ type: 'stray', hole: e.hole });                              // 隣を叩いてしまった（避けたわけではないので点も怒りもなし）
