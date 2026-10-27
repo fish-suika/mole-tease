@@ -48,6 +48,7 @@ const CFG = {
     feintAt: 0.8,         // フェイントは振りかぶりのこの割合で止めて引く（ハンマーを上げきらない）
     recoverFeint: 0.6,    // フェイントのあと次を狙えるまで（途中まで振り下ろして止め、にやりと笑う間）
     recoverStray: 0.8,    // 隣を叩いてしまったあと（ぽかんとする間）
+    flailWindup: 0.4,     // 連打（せっかちな子ども）の振りかぶり。モグラが出ていないときに始まる素振りなので、反応時間の下限は考えない
     ambushWindup: 0.5,    // 待ち伏せ中に同じ穴から出たときの、素早い振りかぶり
     ambushReaction: 0.12, // 待ち伏せ中に気づくまで
     recoverAmbush: 0.25,  // 待ち伏せをあきらめたあと
@@ -61,12 +62,12 @@ const CFG = {
     { name: '激怒', th: 68, windupMul: 0.75, feint: 0.18, reach: 1, hammers: 1, scale: 1.7 },   // 巨大ハンマー：左右の隣の穴まで届く
     { name: '錯乱', th: 88, windupMul: 0.75, feint: 0.22, reach: 1, hammers: 2, scale: 1.7 },   // 2本同時
   ],
-  // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、missMul＝空振り後の立ち直りの倍率（小さいほどすぐ次を叩く）、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp＝怒りの上がりやすさ、hitKeep＝叩いたあとに残る怒りの割合（0＝すっきりリセット）
+  // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、missMul＝空振り後の立ち直りの倍率（小さいほどすぐ次を叩く）、flail＝空振りのあと、同じ穴を続けて振る回数（連打。せっかち）、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp＝怒りの上がりやすさ、hitKeep＝叩いたあとに残る怒りの割合（0＝すっきりリセット）
   // stray＝隣の穴を叩く率（使っていない。バグに見えるので子どもの癖としては外した。検証用に残してある）
   persons: [
-    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.26, stray: 0, missMul: 0.85,  feint: 0,   ambush: 0,   rageUp: 1.1,  hitKeep: 0 },
-    { id: 'uncle',  name: '負けず嫌いのおじさん', windupMul: 1.0,  reaction: 0.30, stray: 0, missMul: 1,   feint: 0.22, ambush: 0,   rageUp: 1.0,  hitKeep: 0.4 },
-    { id: 'granny', name: '正確なおばあちゃん',   windupMul: 1.1,  reaction: 0.30, stray: 0, missMul: 1,   feint: 0,    ambush: 1.3, rageUp: 1.35, hitKeep: 0 },
+    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.28, stray: 0, missMul: 1, flail: 2, feint: 0,    ambush: 0,   rageUp: 1.5,  hitKeep: 0 },
+    { id: 'uncle',  name: '負けず嫌いのおじさん', windupMul: 1.0,  reaction: 0.30, stray: 0, missMul: 1,   flail: 0, feint: 0.22, ambush: 0,   rageUp: 1.0,  hitKeep: 0.4 },
+    { id: 'granny', name: '正確なおばあちゃん',   windupMul: 1.1,  reaction: 0.30, stray: 0, missMul: 1,   flail: 0, feint: 0,    ambush: 1.3, rageUp: 1.35, hitKeep: 0 },
   ],
   score: {
     pps: 100,             // 顔を出している間の毎秒の点
@@ -151,15 +152,15 @@ function windupDur(P, S, CFG) { return Math.max(CFG.human.minWindup, CFG.human.w
 
 function newHuman(CFG, person) {
   // seq＝フェーズが変わるたびに増える（見た目の切り替え用）。target2＝2本目のハンマーの穴（怒り最大のとき）
-  return { person, phase: 'idle', t: 0, seq: 0, wait: CFG.human.firstWait, target: -1, target2: -1, dur: 0, stage: 0, feint: false, strayed: false, lastStray: false, recover: 0, mood: 'calm' };
+  return { person, phase: 'idle', t: 0, seq: 0, wait: CFG.human.firstWait, target: -1, target2: -1, dur: 0, stage: 0, feint: false, strayed: false, lastStray: false, flail: false, flailLeft: 0, sawMole: false, recover: 0, mood: 'calm' };
 }
 
-// 振りかぶりを始める。ambush＝待ち伏せからの素早い振りかぶり
-function startWindup(hu, hole, ambush, ctx, CFG) {
-  const P = hu.person, S = CFG.stages[ctx.stage];
+// 振りかぶりを始める。mode：true＝待ち伏せからの素早い振りかぶり、'flail'＝連打（空振りのあと続けて振る）
+function startWindup(hu, hole, mode, ctx, CFG) {
+  const P = hu.person, S = CFG.stages[ctx.stage], flail = mode === 'flail', ambush = mode === true;
   hu.phase = 'windup'; hu.t = 0; hu.seq++; hu.mood = 'aim'; hu.stage = ctx.stage;
-  hu.target = hole; hu.strayed = false; hu.feint = false; hu.target2 = -1;
-  if (!ambush) {
+  hu.target = hole; hu.strayed = false; hu.feint = false; hu.target2 = -1; hu.flail = flail; hu.sawMole = false;
+  if (!ambush && !flail) {
     // 雑：ときどき隣（左右）の穴を狙ってしまう。続けては起こさない（バグに見えるので）
     if (P.stray > 0 && !hu.lastStray && ctx.rng() < P.stray) {
       const c = colOf(hole), opts = []; if (c > 0) opts.push(hole - 1); if (c < 2) opts.push(hole + 1);
@@ -168,12 +169,12 @@ function startWindup(hu, hole, ambush, ctx, CFG) {
     hu.feint = ctx.rng() < clamp(P.feint + S.feint, 0, 0.6);
   }
   hu.lastStray = hu.strayed;
-  hu.dur = ambush ? CFG.human.ambushWindup : windupDur(P, S, CFG);
-  if (S.hammers >= 2 && !hu.feint) {                       // 2本目：ちがう行のどこか（行を変えるだけでは逃げきれない）
+  hu.dur = flail ? CFG.human.flailWindup : ambush ? CFG.human.ambushWindup : windupDur(P, S, CFG);
+  if (S.hammers >= 2 && !hu.feint && !flail) {                       // 2本目：ちがう行のどこか（行を変えるだけでは逃げきれない）
     const r2 = (rowOf(hu.target) + 1 + Math.min(1, Math.floor(ctx.rng() * 2))) % 3;
     hu.target2 = r2 * 3 + Math.min(2, Math.floor(ctx.rng() * 3));
   }
-  return { type: 'windup', hole: hu.target, hole2: hu.target2, dur: hu.dur, feint: hu.feint, stray: hu.strayed, ambush: !!ambush };
+  return { type: 'windup', hole: hu.target, hole2: hu.target2, dur: hu.dur, feint: hu.feint, stray: hu.strayed, ambush: ambush, flail };
 }
 
 function goPhase(hu, phase, mood) { hu.phase = phase; hu.t = 0; hu.seq++; if (mood) hu.mood = mood; }
@@ -182,6 +183,7 @@ function goPhase(hu, phase, mood) { hu.phase = phase; hu.t = 0; hu.seq++; if (mo
 function humanStep(hu, dt, m, now, CFG, ctx) {
   const Hc = CFG.human, P = hu.person, ev = [];
   hu.t += dt;
+  if (hu.flail && m.stun <= 0 && m.upSince >= 0 && m.hole === hu.target) hu.sawMole = true;   // 連打の最中にモグラが出てきたか（出てきたなら、避けたら普通の空振り扱い）
   if (hu.phase === 'idle') {
     hu.wait -= dt;
     if (hu.wait <= 0 && m.stun <= 0 && m.upSince >= 0 && now - m.upSince >= P.reaction) ev.push(startWindup(hu, m.hole, false, ctx, CFG));
@@ -200,13 +202,19 @@ function humanStep(hu, dt, m, now, CFG, ctx) {
       const cover = t => t >= 0 && rowOf(m.hole) === rowOf(t) && Math.abs(colOf(m.hole) - colOf(t)) <= S.reach;   // 巨大ハンマーは左右の隣の穴まで届く
       const hit = isHittable(m, CFG) && (cover(hu.target) || cover(hu.target2));
       const stray = !hit && hu.strayed && m.hole !== hu.target;
+      const empty = !hit && hu.flail && !hu.sawMole;          // 連打の素振り（モグラがいなかった）：避けたことにならず、点も怒りもなし
       let gap = null, close = 0;
-      if (!hit && !stray) {
+      if (!hit && !stray && !empty) {
         gap = Math.max(0, now - m.exitTs[hu.target]);
         close = clamp(1 - gap / CFG.score.nearWindow, 0, 1);
       }
-      ev.push({ type: 'impact', hole: hu.target, hole2: hu.target2, hit, stray, gap, close });
-      if (hit) { goPhase(hu, 'recover', 'happy'); hu.recover = Hc.recoverHit; }
+      ev.push({ type: 'impact', hole: hu.target, hole2: hu.target2, hit, stray, empty, gap, close });
+      if (hit) { hu.flailLeft = 0; goPhase(hu, 'recover', 'happy'); hu.recover = Hc.recoverHit; }
+      else if (!stray && P.flail > 0 && (!empty || hu.flailLeft > 0)) {
+        if (!empty) hu.flailLeft = P.flail;                   // 本物の空振りのあと、続けて振り回す
+        if (hu.flailLeft > 0) { hu.flailLeft--; ev.push(startWindup(hu, hu.target, 'flail', ctx, CFG)); }
+        else { goPhase(hu, 'recover', 'miss'); hu.recover = Hc.recoverMiss * (P.missMul || 1); }
+      }
       else if (!stray && P.ambush > 0) goPhase(hu, 'ambush', 'aim');
       else if (stray) { goPhase(hu, 'recover', 'confuse'); hu.recover = Hc.recoverStray; }
       else { goPhase(hu, 'recover', 'miss'); hu.recover = Hc.recoverMiss * (P.missMul || 1); }   // せっかちな子どもは空振りしてもすぐ次を叩く
@@ -251,6 +259,8 @@ function stepGame(g, dt, press, CFG) {
       g.bumps++; m.stun = CFG.mole.stunTime; m.hitT = 0;
       if (!g.noRage) g.rage *= P.hitKeep;                                    // 叩くとすっきりする（時間ではさめない。叩いたときだけ下がる）
       ev.push({ type: 'bump', bumps: g.bumps, hole: e.hole });
+    } else if (e.empty) {
+      ev.push({ type: 'flail', hole: e.hole });                              // 連打の素振り（避けたわけではないので点も怒りもなし）
     } else if (e.stray) {
       ev.push({ type: 'stray', hole: e.hole });                              // 隣を叩いてしまった（避けたわけではないので点も怒りもなし）
     } else {
@@ -438,12 +448,12 @@ const info = (name, v) => check(name + '：' + v, true);
 const actualTotal = dur => { let t = 0, n = 0; while (t < dur) { t += DT; n++; } t = 0; while (t < CFG.human.strike) { t += DT; n++; } return n * DT; };   // 人間のタイマーと同じ足し方で数える（浮動小数の端数まで合わせる）
 // 振りかぶりを見て避ける人。margin＝叩かれる何秒前に引っ込むか、hop＝避けるたびに穴を変える。フェイントは見分けて動じない
 function skilled(margin, hop, jit, seed) {
-  let rel = null, hi = 0; const holes = [4, 5, 3, 4], jr = seeded((seed || 1) * 99991 + 7);   // jit＝離す時刻のばらつき（人間らしさ。±秒）
+  let rel = null, hi = 0; const holes = [4, 7, 1, 4], jr = seeded((seed || 1) * 99991 + 7);   // jit＝離す時刻のばらつき（人間らしさ。±秒）
   return (g, last) => {
     for (const e of last) {
-      if (e.type === 'windup') rel = (e.feint || (e.stray && g.stage < 3)) ? null : g.t + actualTotal(e.dur) - FALL - margin + (jit ? (jr() * 2 - 1) * jit : 0);
+      if (e.type === 'windup') rel = (e.feint || (e.stray && g.stage < 3) || e.hole !== holes[hi]) ? null : g.t + actualTotal(e.dur) - FALL - margin + (jit ? (jr() * 2 - 1) * jit : 0);
       else if (e.type === 'feint') rel = null;
-      else if (e.type === 'impact') { rel = null; if (hop && !e.hit) hi = (hi + 1) % 3; }
+      else if (e.type === 'impact') { rel = null; if (hop && !e.hit && !e.empty && !(e.flail)) hi = (hi + 1) % 3; }
     }
     if (rel !== null && g.t >= rel) return -1;
     return holes[hi];
@@ -540,7 +550,14 @@ const holdOn = n => () => n;
 
   // 子どもの癖：隣は叩かない。空振りしてもすぐ次を叩く（せっかち）
   check('子どもは隣の穴を叩かない（バグに見えるので外した）', PERS('kid').stray === 0 && (() => { const r = runG({ person: PERS('kid'), noRage: true, rng: seeded(2) }, skilled(0.15, false), 30); return !r.evs.some(e => e.type === 'stray') && !r.evs.some(e => e.type === 'windup' && e.stray); })());
-  check('子どもは空振りのあと、すぐ次を叩ける（立ち直りが他の人より短い）', (() => { const rec = id => { const r = runG({ person: PERS(id), noRage: true, rng: () => 0.99 }, skilled(0.15, false), 12); return r.g.human.recover; }; return PERS('kid').missMul < 1 && rec('kid') < rec('uncle') && Math.abs(rec('kid') - CFG.human.recoverMiss * PERS('kid').missMul) < 1e-9; })());
+  // 連打：本物の空振りのあと、同じ穴を続けて振り回す。素振りは点にも怒りにもならない
+  const kf = runG({ person: PERS('kid'), noRage: true, rng: () => 0.99 }, (g, last) => { for (const e of last) if (e.type === 'windup' && !e.flail && g._rel === undefined) g._rel = g.t + actualTotal(e.dur) - FALL - 0.15; return g._rel !== undefined && g.t >= g._rel ? -1 : 4; }, 4.5);   // 最初の振りかぶりを避けたあと、ずっと隠れている
+  const fw = kf.evs.filter(e => e.type === 'windup');
+  check('子どもは空振りのあと、同じ穴を続けて 2 回振り回す（連打）', fw.length >= 3 && !fw[0].flail && fw[1].flail && fw[2].flail && fw[1].hole === fw[0].hole && fw[2].hole === fw[0].hole && PERS('kid').flail === 2, fw.slice(0, 4).map(e => (e.flail ? 'F' : 'W') + e.hole).join(' '));
+  check('連打の素振りは短く（flailWindup）、モグラが出ていなければ点も怒りも増えない', (() => { const f = fw.find(e => e.flail); const flails = kf.evs.filter(e => e.type === 'flail').length; return f && near(f.dur, CFG.human.flailWindup, 1e-9) && flails >= 2 && kf.g.whiffs === 1; })());
+  check('連打は 2 回で終わり、そのあと落ち着く（3 回目は振らない）', (() => { const w = kf.evs.filter(e => e.type === 'windup'); let run = 0, maxRun = 0; for (const e of w) { run = e.flail ? run + 1 : 0; maxRun = Math.max(maxRun, run); } return maxRun === 2; })());
+  check('連打の最中に出ると叩かれる（出直す穴を間違えると罰）', (() => { const g = newGame(CFG, { person: PERS('kid'), noRage: true, rng: () => 0.99 }); const hu = g.human; hu.wait = 0; const m = g.mole; let hit = false; hu.phase = 'idle'; hu.flailLeft = 0; hu.target = 4; const ctx = { stage: 0, rng: () => 0.99 }; startWindup(hu, 4, 'flail', ctx, CFG); m.hole = 4; for (let i = 0; i < 40 && !hit; i++) { const e = stepGame(g, DT, i > 5 ? 4 : -1, CFG); if (e.some(x => x.type === 'bump')) hit = true; } return hit; })());
+  check('他の人（おじさん・おばあちゃん）は連打しない', ['uncle', 'granny'].every(id => PERS(id).flail === 0 && !runG({ person: PERS(id), noRage: true, rng: () => 0.99 }, skilled(0.15, false), 30).evs.some(e => e.type === 'windup' && e.flail)));
 
   // 待ち伏せ（おばあちゃん）：空振りした穴の上で構えて待つ
   function grannyAfterWhiff(next) {   // 最初の空振りまで 4 を押し続けて避け、そのあと next（穴番号）を押す
@@ -578,7 +595,7 @@ const holdOn = n => () => n;
   function trial(id, margin, n) {
     const out = { score: [], bumps: [], stage: [], escaped: [] };
     for (let s = 1; s <= n; s++) {
-      const r = runG({ person: PERS(id), rng: seeded(s * 7919 + 13) }, skilled(margin, PERS(id).ambush > 0, JIT, s), 61);
+      const r = runG({ person: PERS(id), rng: seeded(s * 7919 + 13) }, skilled(margin, PERS(id).ambush > 0 || PERS(id).flail > 0, JIT, s), 61);
       out.score.push(r.g.score); out.bumps.push(r.g.bumps); out.stage.push(r.g.maxStage); out.escaped.push(r.g.reason === 'escaped' ? 1 : 0);
     }
     return out;

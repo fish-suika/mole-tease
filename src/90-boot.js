@@ -116,9 +116,10 @@
         $('scoreBox').classList.remove('bump'); void $('scoreBox').offsetWidth; $('scoreBox').classList.add('bump');
       } else if (e.type === 'stage') {
         shakeAmp = Math.max(shakeAmp, 0.35);
-        if (e.stage < e.from) pop('すっきり<small>×' + (e.stage + 1) + ' にもどった</small>', 'cool', 'stage');
-        if (e.stage > e.from) { pop(CFG.stages[e.stage].name + '！<small>点が ×' + (e.stage + 1) + '</small>', 'rage', 'stage'); const rn = $('rageName'); rn.classList.remove('bump'); void rn.offsetWidth; rn.classList.add('bump'); }
-        if (e.stage > e.from) { const b = $('multBox'); b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
+        // 段階の変化は文字を出さない（空振りの表示と同時に出ると読めないため）。ゲージが光って、段階名と倍率がはずむ
+        const rg = $('rage'); rg.classList.remove('up', 'down'); void rg.offsetWidth; rg.classList.add(e.stage > e.from ? 'up' : 'down');
+        const rn = $('rageName'); rn.classList.remove('bump'); void rn.offsetWidth; rn.classList.add('bump');
+        const mb = $('multBox'); mb.classList.remove('bump'); void mb.offsetWidth; mb.classList.add('bump');
       } else if (e.type === 'bump') {
         pop('ピコッ！', 'bad');
       } else if (e.type === 'end') endGame();

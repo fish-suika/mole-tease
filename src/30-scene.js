@@ -56,6 +56,7 @@ function buildMole() {
 function buildHammer() {
   const g = new THREE.Group();
   const wood = lm(0xc98b4b), red = lm(0xe03131), gold = lm(0xffd43b);
+  g.userData.mats = { head: red, band: gold, handle: wood };
   const head = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 1.9, 24), red); head.rotation.z = Math.PI / 2; head.position.y = 0.62;
   g.add(head);
   for (const s of [-1, 1]) { const band = new THREE.Mesh(new THREE.CylinderGeometry(0.64, 0.64, 0.14, 24), gold); band.rotation.z = Math.PI / 2; band.position.set(s * 0.8, 0.62, 0); g.add(band); }
@@ -73,9 +74,9 @@ function stretch(mesh, a, b, r) {
 
 // 叩く人 3人の見た目（骨組みは共通、色・小物・大きさだけ差し替え）
 const LOOK = {
-  kid:    { shirt: 0xf08c00, hair: 0xc92a2a, scale: 0.86, skin: 0xffd2a8 },
-  uncle:  { shirt: 0x4c6ef5, hair: 0x2b2b2b, scale: 1.0,  skin: 0xf3c29a },
-  granny: { shirt: 0xe599f7, hair: 0xced4da, scale: 0.94, skin: 0xffdcc0 },
+  kid:    { shirt: 0xf08c00, hair: 0xc92a2a, scale: 0.86, skin: 0xffd2a8, hammer: { head: 0xffd43b, band: 0xff6b6b, handle: 0xff922b, size: 0.72 } },   // 小さな黄色いおもちゃのハンマー
+  uncle:  { shirt: 0x4c6ef5, hair: 0x2b2b2b, scale: 1.0,  skin: 0xf3c29a, hammer: { head: 0xe03131, band: 0xffd43b, handle: 0xc98b4b, size: 1.0 } },
+  granny: { shirt: 0xe599f7, hair: 0xced4da, scale: 0.94, skin: 0xffdcc0, hammer: { head: 0x8d5a2b, band: 0x4a2f14, handle: 0x6b4423, size: 1.2 } },   // 大きな木づち
 };
 const SKIN_RAGE = new THREE.Color(0xff5a4a);
 
@@ -129,6 +130,8 @@ function buildHuman(id) {
   body.scale.setScalar(L.scale); g.userData.hs = L.scale;
   return g;
 }
+
+function applyHammerLook(h, look) { const m = h.userData.mats; m.head.color.setHex(look.head); m.band.color.setHex(look.band); m.handle.color.setHex(look.handle); }
 
 // 世界を作って返す
 function createWorld(scene) {
@@ -208,7 +211,8 @@ function updateWorld(W, g, dt, now) {
 
   // --- 今回の人だけ見せる ---
   const H = W.humans[g.person.id];
-  if (W.human !== H) { if (W.human) W.human.visible = false; W.human = H; H.visible = true; W.key = -1; }
+  if (W.human !== H) { if (W.human) W.human.visible = false; W.human = H; H.visible = true; W.key = -1; applyHammerLook(W.hammer, LOOK[g.person.id].hammer); applyHammerLook(W.hammer2, LOOK[g.person.id].hammer); }
+  const hsz = LOOK[g.person.id].hammer.size;
   const U = H.userData, hs = U.hs;
 
   // --- モグラ ---
@@ -253,7 +257,8 @@ function updateWorld(W, g, dt, now) {
     pose = mixPose(W.pose, rest, 1 - Math.exp(-dt * 7));
   }
   W.pose = pose;
-  const sc = hu.phase === 'idle' ? lerp(W.hammer.scale.x, S.scale, 1 - Math.exp(-dt * 8)) : lerp(W.hammer.scale.x, hu.phase === 'windup' || hu.phase === 'strike' ? CFG.stages[hu.stage].scale : W.hammer.scale.x, 1 - Math.exp(-dt * 10));
+  W.scaleS = lerp(W.scaleS || 1, hu.phase === 'windup' || hu.phase === 'strike' ? CFG.stages[hu.stage].scale : S.scale, 1 - Math.exp(-dt * 9));
+  const sc = W.scaleS * hsz;   // 段階の大きさ × 人ごとのハンマーの大きさ
   const hm = W.hammer; hm.scale.setScalar(sc); hm.position.set(pose.x, pose.y, pose.z); hm.rotation.x = pose.tilt;
 
   // --- ハンマー（2本目：錯乱） ---
@@ -262,7 +267,7 @@ function updateWorld(W, g, dt, now) {
   let pose2 = null;
   if (two) {
     pose2 = pose2For(hu);
-    const h2 = W.hammer2; h2.scale.setScalar(CFG.stages[hu.stage].scale); h2.position.set(pose2.x, pose2.y, pose2.z); h2.rotation.x = pose2.tilt;
+    const h2 = W.hammer2; h2.scale.setScalar(CFG.stages[hu.stage].scale * hsz); h2.position.set(pose2.x, pose2.y, pose2.z); h2.rotation.x = pose2.tilt;
   }
 
   // 影と縁（予告）
@@ -277,7 +282,7 @@ function updateWorld(W, g, dt, now) {
   };
   const wu = hu.phase === 'windup' ? clamp(hu.t / hu.dur, 0, 1) : 1;
   shade(W.shadow, hu.target, warn, wu, sc);
-  shade(W.shadow2, hu.target2, warn && hu.target2 >= 0, wu, CFG.stages[hu.stage].scale);
+  shade(W.shadow2, hu.target2, warn && hu.target2 >= 0, wu, CFG.stages[hu.stage].scale * hsz);
 
   // --- 人間（腕・表情・怒り） ---
   const humanPos = H.position;
@@ -286,7 +291,7 @@ function updateWorld(W, g, dt, now) {
   U.armR.position.sub(humanPos); U.handR.position.sub(humanPos);
   if (two) {
     const shR2 = _v3.set(humanPos.x - 1.65 * hs, 2.8 * hs, humanPos.z + 0.1 * hs);
-    reach(U, U.armR2, U.handR2, shR2, pose2, CFG.stages[hu.stage].scale, 0.3);
+    reach(U, U.armR2, U.handR2, shR2, pose2, CFG.stages[hu.stage].scale * hsz, 0.3);
     U.armR2.position.sub(humanPos); U.handR2.position.sub(humanPos);
   }
   const shL = _v4.set(-1.65 * hs, 2.8 * hs, 0.1 * hs), handLp = new THREE.Vector3(-2.0, 0.6, 1.5);
@@ -320,6 +325,7 @@ function updateWorld(W, g, dt, now) {
   else if (hu.phase === 'recover' && hu.mood === 'happy') bob = Math.abs(Math.sin(hu.t * 12)) * 0.25;
   else if (hu.phase === 'recover' && hu.mood === 'feint') bob = Math.abs(Math.sin(hu.t * 16)) * 0.12;
   if (sg >= 3 && hu.phase === 'idle') bob += Math.abs(Math.sin(now * 14)) * 0.14;
+  if (U.id === 'kid' && (hu.phase === 'idle' || hu.phase === 'recover' && hu.mood !== 'happy')) { bob += Math.abs(Math.sin(now * 11)) * 0.22; shake += Math.sin(now * 7) * 0.16; }   // せっかち：じっとしていない
   if (sg >= 4) shake += Math.sin(now * 40) * 0.08;
   U.head.rotation.z = mood === 'confuse' ? 0.3 : mood === 'feint' ? Math.sin(now * 9) * 0.14 : 0;   // ぽかんと首をかしげる／にやりとゆらす
   U.head.rotation.x = lean * 0.6; U.head.rotation.y = shake; U.head.position.y = 4.2 + bob;

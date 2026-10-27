@@ -10,12 +10,12 @@ const info = (name, v) => check(name + '：' + v, true);
 const actualTotal = dur => { let t = 0, n = 0; while (t < dur) { t += DT; n++; } t = 0; while (t < CFG.human.strike) { t += DT; n++; } return n * DT; };   // 人間のタイマーと同じ足し方で数える（浮動小数の端数まで合わせる）
 // 振りかぶりを見て避ける人。margin＝叩かれる何秒前に引っ込むか、hop＝避けるたびに穴を変える。フェイントは見分けて動じない
 function skilled(margin, hop, jit, seed) {
-  let rel = null, hi = 0; const holes = [4, 5, 3, 4], jr = seeded((seed || 1) * 99991 + 7);   // jit＝離す時刻のばらつき（人間らしさ。±秒）
+  let rel = null, hi = 0; const holes = [4, 7, 1, 4], jr = seeded((seed || 1) * 99991 + 7);   // jit＝離す時刻のばらつき（人間らしさ。±秒）
   return (g, last) => {
     for (const e of last) {
-      if (e.type === 'windup') rel = (e.feint || (e.stray && g.stage < 3)) ? null : g.t + actualTotal(e.dur) - FALL - margin + (jit ? (jr() * 2 - 1) * jit : 0);
+      if (e.type === 'windup') rel = (e.feint || (e.stray && g.stage < 3) || e.hole !== holes[hi]) ? null : g.t + actualTotal(e.dur) - FALL - margin + (jit ? (jr() * 2 - 1) * jit : 0);
       else if (e.type === 'feint') rel = null;
-      else if (e.type === 'impact') { rel = null; if (hop && !e.hit) hi = (hi + 1) % 3; }
+      else if (e.type === 'impact') { rel = null; if (hop && !e.hit && !e.empty && !(e.flail)) hi = (hi + 1) % 3; }
     }
     if (rel !== null && g.t >= rel) return -1;
     return holes[hi];
@@ -112,7 +112,14 @@ const holdOn = n => () => n;
 
   // 子どもの癖：隣は叩かない。空振りしてもすぐ次を叩く（せっかち）
   check('子どもは隣の穴を叩かない（バグに見えるので外した）', PERS('kid').stray === 0 && (() => { const r = runG({ person: PERS('kid'), noRage: true, rng: seeded(2) }, skilled(0.15, false), 30); return !r.evs.some(e => e.type === 'stray') && !r.evs.some(e => e.type === 'windup' && e.stray); })());
-  check('子どもは空振りのあと、すぐ次を叩ける（立ち直りが他の人より短い）', (() => { const rec = id => { const r = runG({ person: PERS(id), noRage: true, rng: () => 0.99 }, skilled(0.15, false), 12); return r.g.human.recover; }; return PERS('kid').missMul < 1 && rec('kid') < rec('uncle') && Math.abs(rec('kid') - CFG.human.recoverMiss * PERS('kid').missMul) < 1e-9; })());
+  // 連打：本物の空振りのあと、同じ穴を続けて振り回す。素振りは点にも怒りにもならない
+  const kf = runG({ person: PERS('kid'), noRage: true, rng: () => 0.99 }, (g, last) => { for (const e of last) if (e.type === 'windup' && !e.flail && g._rel === undefined) g._rel = g.t + actualTotal(e.dur) - FALL - 0.15; return g._rel !== undefined && g.t >= g._rel ? -1 : 4; }, 4.5);   // 最初の振りかぶりを避けたあと、ずっと隠れている
+  const fw = kf.evs.filter(e => e.type === 'windup');
+  check('子どもは空振りのあと、同じ穴を続けて 2 回振り回す（連打）', fw.length >= 3 && !fw[0].flail && fw[1].flail && fw[2].flail && fw[1].hole === fw[0].hole && fw[2].hole === fw[0].hole && PERS('kid').flail === 2, fw.slice(0, 4).map(e => (e.flail ? 'F' : 'W') + e.hole).join(' '));
+  check('連打の素振りは短く（flailWindup）、モグラが出ていなければ点も怒りも増えない', (() => { const f = fw.find(e => e.flail); const flails = kf.evs.filter(e => e.type === 'flail').length; return f && near(f.dur, CFG.human.flailWindup, 1e-9) && flails >= 2 && kf.g.whiffs === 1; })());
+  check('連打は 2 回で終わり、そのあと落ち着く（3 回目は振らない）', (() => { const w = kf.evs.filter(e => e.type === 'windup'); let run = 0, maxRun = 0; for (const e of w) { run = e.flail ? run + 1 : 0; maxRun = Math.max(maxRun, run); } return maxRun === 2; })());
+  check('連打の最中に出ると叩かれる（出直す穴を間違えると罰）', (() => { const g = newGame(CFG, { person: PERS('kid'), noRage: true, rng: () => 0.99 }); const hu = g.human; hu.wait = 0; const m = g.mole; let hit = false; hu.phase = 'idle'; hu.flailLeft = 0; hu.target = 4; const ctx = { stage: 0, rng: () => 0.99 }; startWindup(hu, 4, 'flail', ctx, CFG); m.hole = 4; for (let i = 0; i < 40 && !hit; i++) { const e = stepGame(g, DT, i > 5 ? 4 : -1, CFG); if (e.some(x => x.type === 'bump')) hit = true; } return hit; })());
+  check('他の人（おじさん・おばあちゃん）は連打しない', ['uncle', 'granny'].every(id => PERS(id).flail === 0 && !runG({ person: PERS(id), noRage: true, rng: () => 0.99 }, skilled(0.15, false), 30).evs.some(e => e.type === 'windup' && e.flail)));
 
   // 待ち伏せ（おばあちゃん）：空振りした穴の上で構えて待つ
   function grannyAfterWhiff(next) {   // 最初の空振りまで 4 を押し続けて避け、そのあと next（穴番号）を押す
@@ -150,7 +157,7 @@ const holdOn = n => () => n;
   function trial(id, margin, n) {
     const out = { score: [], bumps: [], stage: [], escaped: [] };
     for (let s = 1; s <= n; s++) {
-      const r = runG({ person: PERS(id), rng: seeded(s * 7919 + 13) }, skilled(margin, PERS(id).ambush > 0, JIT, s), 61);
+      const r = runG({ person: PERS(id), rng: seeded(s * 7919 + 13) }, skilled(margin, PERS(id).ambush > 0 || PERS(id).flail > 0, JIT, s), 61);
       out.score.push(r.g.score); out.bumps.push(r.g.bumps); out.stage.push(r.g.maxStage); out.escaped.push(r.g.reason === 'escaped' ? 1 : 0);
     }
     return out;
