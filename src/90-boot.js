@@ -10,7 +10,7 @@
   const W = createWorld(scene);
   const camera = new THREE.PerspectiveCamera(60, 9 / 16, 0.1, 80);
   const C = CFG.cam;
-  let shakeAmp = 0, peek = 0, camX = 0, tilt = 0, baseFov = 60;
+  let shakeAmp = 0, peek = 0, camX = 0, tilt = 0, baseFov = 60, hold = 0, kick = 0;   // hold＝ヒットストップ（秒）、kick＝画角のはずみ
   const holePts = Array.from({ length: 9 }, () => ({ x: 0, y: 0 }));
 
   function fit() {
@@ -116,10 +116,16 @@
         $('scoreBox').classList.remove('bump'); void $('scoreBox').offsetWidth; $('scoreBox').classList.add('bump');
       } else if (e.type === 'stage') {
         shakeAmp = Math.max(shakeAmp, 0.35);
-        // 段階の変化は文字を出さない（空振りの表示と同時に出ると読めないため）。ゲージが光って、段階名と倍率がはずむ
+        // 段階アップは「この瞬間」だと分かるように：一瞬止まる（ヒットストップ）・段階の色で画面が縁取られて光る・画面が大きくゆれて画角がはずむ・人間がぷくっと膨らむ・ゲージ、倍率が光る。
+        // 文字は空振りの文字と重ならないよう少しあとに、段階名だけを別の場所に出す
         const rg = $('rage'); rg.classList.remove('up', 'down'); void rg.offsetWidth; rg.classList.add(e.stage > e.from ? 'up' : 'down');
         const rn = $('rageName'); rn.classList.remove('bump'); void rn.offsetWidth; rn.classList.add('bump');
         const mb = $('multBox'); mb.classList.remove('bump'); void mb.offsetWidth; mb.classList.add('bump');
+        if (e.stage > e.from) {
+          hold = 0.14; kick = 1; shakeAmp = Math.max(shakeAmp, 0.7); W.pulse = 1;
+          const sf = $('sflash'); sf.style.setProperty('--sc', ['#74c0fc', '#ffd43b', '#ff922b', '#ff6b6b', '#e64980'][e.stage]); sf.classList.remove('on'); void sf.offsetWidth; sf.classList.add('on');
+          const nm = CFG.stages[e.stage].name; setTimeout(() => { if (state === 'play') pop(nm + '！', 'rage', 'stage'); }, 650);
+        }
       } else if (e.type === 'bump') {
         pop('ピコッ！', 'bad');
       } else if (e.type === 'end') endGame();
@@ -130,7 +136,7 @@
   let last = performance.now(), simT = 0;
   function frame(nowMs) {
     const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs; simT += dt;
-    if (state === 'play' && !freeze) { onEvents(stepGame(g, dt, press, CFG)); refreshHud(); }
+    if (state === 'play' && !freeze) { if (hold > 0) hold -= dt; else { onEvents(stepGame(g, dt, press, CFG)); refreshHud(); } }
     updateWorld(W, g, dt, simT);
     // 出ている間は一人称：出ている穴の、モグラの目の位置へカメラが降りる（押す位置の判定は俯瞰のカメラ基準のまま）
     const P = CFG.fps, mp = holePos(g.mole.hole, CFG);
@@ -143,7 +149,8 @@
     const pitch = (P.pitch + P.windupPitch * tilt) * Math.PI / 180;
     camera.position.set(lerp(C.pos[0], camX, peek) + sx, lerp(C.pos[1], eyeY, peek) + sy, lerp(C.pos[2], mp.z + P.back, peek));
     camera.lookAt(lerp(C.look[0], camX * P.lookXk, peek), lerp(C.look[1], eyeY + P.lookDist * Math.tan(pitch), peek), lerp(C.look[2], mp.z - P.lookDist, peek));
-    const fov = lerp(baseFov, P.fov, peek);
+    kick = Math.max(0, kick - dt * 3);
+    const fov = lerp(baseFov, P.fov, peek) + 9 * kick;
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     W.fpsView = peek > P.hideAt;
     $('tunnel').style.opacity = peek;

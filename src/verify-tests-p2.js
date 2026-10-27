@@ -1,6 +1,7 @@
 // ===== Phase 2：怒りの段階・3人の癖 =====
 function seeded(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 const PERS = id => CFG.persons.find(p => p.id === id);
+const FLAILP = Object.assign({}, PERS('kid'), { flail: 2 });   // 連打の仕組みの検証用（ゲームでは使っていない）
 const STRAYP = Object.assign({}, PERS('kid'), { stray: 0.12 });   // 隣打ちの仕組みの検証用（ゲームでは使っていない）
 const FALL = (1 - CFG.mole.hitH) / CFG.mole.fall;
 const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
@@ -113,13 +114,13 @@ const holdOn = n => () => n;
   // 子どもの癖：隣は叩かない。空振りしてもすぐ次を叩く（せっかち）
   check('子どもは隣の穴を叩かない（バグに見えるので外した）', PERS('kid').stray === 0 && (() => { const r = runG({ person: PERS('kid'), noRage: true, rng: seeded(2) }, skilled(0.15, false), 30); return !r.evs.some(e => e.type === 'stray') && !r.evs.some(e => e.type === 'windup' && e.stray); })());
   // 連打：本物の空振りのあと、同じ穴を続けて振り回す。素振りは点にも怒りにもならない
-  const kf = runG({ person: PERS('kid'), noRage: true, rng: () => 0.99 }, (g, last) => { for (const e of last) if (e.type === 'windup' && !e.flail && g._rel === undefined) g._rel = g.t + actualTotal(e.dur) - FALL - 0.15; return g._rel !== undefined && g.t >= g._rel ? -1 : 4; }, 4.5);   // 最初の振りかぶりを避けたあと、ずっと隠れている
+  const kf = runG({ person: FLAILP, noRage: true, rng: () => 0.99 }, (g, last) => { for (const e of last) if (e.type === 'windup' && !e.flail && g._rel === undefined) g._rel = g.t + actualTotal(e.dur) - FALL - 0.15; return g._rel !== undefined && g.t >= g._rel ? -1 : 4; }, 4.5);   // 最初の振りかぶりを避けたあと、ずっと隠れている
   const fw = kf.evs.filter(e => e.type === 'windup');
-  check('子どもは空振りのあと、同じ穴を続けて 2 回振り回す（連打）', fw.length >= 3 && !fw[0].flail && fw[1].flail && fw[2].flail && fw[1].hole === fw[0].hole && fw[2].hole === fw[0].hole && PERS('kid').flail === 2, fw.slice(0, 4).map(e => (e.flail ? 'F' : 'W') + e.hole).join(' '));
+  check('（仕組み）連打する人は、空振りのあと同じ穴を続けて 2 回振り回す', fw.length >= 3 && !fw[0].flail && fw[1].flail && fw[2].flail && fw[1].hole === fw[0].hole && fw[2].hole === fw[0].hole && FLAILP.flail === 2, fw.slice(0, 4).map(e => (e.flail ? 'F' : 'W') + e.hole).join(' '));
   check('連打の素振りは短く（flailWindup）、モグラが出ていなければ点も怒りも増えない', (() => { const f = fw.find(e => e.flail); const flails = kf.evs.filter(e => e.type === 'flail').length; return f && near(f.dur, CFG.human.flailWindup, 1e-9) && flails >= 2 && kf.g.whiffs === 1; })());
   check('連打は 2 回で終わり、そのあと落ち着く（3 回目は振らない）', (() => { const w = kf.evs.filter(e => e.type === 'windup'); let run = 0, maxRun = 0; for (const e of w) { run = e.flail ? run + 1 : 0; maxRun = Math.max(maxRun, run); } return maxRun === 2; })());
-  check('連打の最中に出ると叩かれる（出直す穴を間違えると罰）', (() => { const g = newGame(CFG, { person: PERS('kid'), noRage: true, rng: () => 0.99 }); const hu = g.human; hu.wait = 0; const m = g.mole; let hit = false; hu.phase = 'idle'; hu.flailLeft = 0; hu.target = 4; const ctx = { stage: 0, rng: () => 0.99 }; startWindup(hu, 4, 'flail', ctx, CFG); m.hole = 4; for (let i = 0; i < 40 && !hit; i++) { const e = stepGame(g, DT, i > 5 ? 4 : -1, CFG); if (e.some(x => x.type === 'bump')) hit = true; } return hit; })());
-  check('他の人（おじさん・おばあちゃん）は連打しない', ['uncle', 'granny'].every(id => PERS(id).flail === 0 && !runG({ person: PERS(id), noRage: true, rng: () => 0.99 }, skilled(0.15, false), 30).evs.some(e => e.type === 'windup' && e.flail)));
+  check('連打の最中に出ると叩かれる（出直す穴を間違えると罰）', (() => { const g = newGame(CFG, { person: FLAILP, noRage: true, rng: () => 0.99 }); const hu = g.human; hu.wait = 0; const m = g.mole; let hit = false; hu.phase = 'idle'; hu.flailLeft = 0; hu.target = 4; const ctx = { stage: 0, rng: () => 0.99 }; startWindup(hu, 4, 'flail', ctx, CFG); m.hole = 4; for (let i = 0; i < 40 && !hit; i++) { const e = stepGame(g, DT, i > 5 ? 4 : -1, CFG); if (e.some(x => x.type === 'bump')) hit = true; } return hit; })());
+  check('3人とも連打しない（待ち時間でテンポが悪くなるため。子どもは空振り後の立ち直りが速いだけ）', CFG.persons.every(p => p.flail === 0) && PERS('kid').missMul < 1 && ['kid', 'uncle', 'granny'].every(id => !runG({ person: PERS(id), noRage: true, rng: () => 0.99 }, skilled(0.15, false), 30).evs.some(e => e.type === 'windup' && e.flail)));
 
   // 待ち伏せ（おばあちゃん）：空振りした穴の上で構えて待つ
   function grannyAfterWhiff(next) {   // 最初の空振りまで 4 を押し続けて避け、そのあと next（穴番号）を押す

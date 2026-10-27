@@ -40,10 +40,10 @@ const CFG = {
     { name: '激怒', th: 68, windupMul: 0.75, feint: 0.18, reach: 1, hammers: 1, scale: 1.7 },   // 巨大ハンマー：左右の隣の穴まで届く
     { name: '錯乱', th: 88, windupMul: 0.75, feint: 0.22, reach: 1, hammers: 2, scale: 1.7 },   // 2本同時
   ],
-  // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、missMul＝空振り後の立ち直りの倍率（小さいほどすぐ次を叩く）、flail＝空振りのあと、同じ穴を続けて振る回数（連打。せっかち）、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp＝怒りの上がりやすさ、hitKeep＝叩いたあとに残る怒りの割合（0＝すっきりリセット）
+  // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、missMul＝空振り後の立ち直りの倍率（小さいほどすぐ次を叩く）、flail＝空振りのあと、同じ穴を続けて振る回数（連打。使っていない。待ち時間でテンポが悪くなるので子どもからは外した。検証用に残してある）、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp＝怒りの上がりやすさ、hitKeep＝叩いたあとに残る怒りの割合（0＝すっきりリセット）
   // stray＝隣の穴を叩く率（使っていない。バグに見えるので子どもの癖としては外した。検証用に残してある）
   persons: [
-    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.28, stray: 0, missMul: 1, flail: 2, feint: 0,    ambush: 0,   rageUp: 1.5,  hitKeep: 0 },
+    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.30, stray: 0, missMul: 0.85, flail: 0, feint: 0,    ambush: 0,   rageUp: 0.95,  hitKeep: 0 },
     { id: 'uncle',  name: '負けず嫌いのおじさん', windupMul: 1.0,  reaction: 0.30, stray: 0, missMul: 1,   flail: 0, feint: 0.22, ambush: 0,   rageUp: 1.0,  hitKeep: 0.4 },
     { id: 'granny', name: '正確なおばあちゃん',   windupMul: 1.1,  reaction: 0.30, stray: 0, missMul: 1,   flail: 0, feint: 0,    ambush: 1.3, rageUp: 1.35, hitKeep: 0 },
   ],

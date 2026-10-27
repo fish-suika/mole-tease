@@ -42,6 +42,9 @@
   #scoreBox.bump{animation:bump .3s ease-out}
   @keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.2)}100%{transform:scale(1)}}
 
+  #sflash{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,0) 28%,var(--sc,#ff922b) 100%)}
+  #sflash.on{animation:sflash .75s ease-out}
+  @keyframes sflash{0%{opacity:1}100%{opacity:0}}
   #flash{position:absolute;inset:0;z-index:4;pointer-events:none;background:radial-gradient(circle,rgba(255,255,255,.9),rgba(255,70,70,.8));opacity:0}
   #flash.on{animation:flash .45s ease-out}
   @keyframes flash{0%{opacity:.95}100%{opacity:0}}
@@ -104,7 +107,7 @@
     <div id="rage"><i style="left:18%"></i><i style="left:42%"></i><i style="left:68%"></i><i style="left:88%"></i><div id="rageFill"></div><span id="rageLab">怒り</span><span id="rageName">平静</span></div>
   </div>
   <div id="tunnel"></div><div id="danger"></div>
-  <div id="flash"></div>
+  <div id="sflash"></div><div id="flash"></div>
   <div id="clock"><div id="clockZone"></div><div id="clockFill"></div></div>
   <div id="clockLab"><span class="ph">黄色いところで</span><span class="ph">離すと紙一重</span></div>
   <div id="mini"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
