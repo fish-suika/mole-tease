@@ -10,7 +10,7 @@
   const W = createWorld(scene);
   const camera = new THREE.PerspectiveCamera(60, 9 / 16, 0.1, 80);
   const C = CFG.cam;
-  let shakeAmp = 0;
+  let shakeAmp = 0, peek = 0, camX = 0;
   const holePts = Array.from({ length: 9 }, () => ({ x: 0, y: 0 }));
 
   function fit() {
@@ -113,10 +113,13 @@
     const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs; simT += dt;
     if (state === 'play' && !freeze) { onEvents(stepGame(g, dt, press, CFG)); refreshHud(); }
     updateWorld(W, g, dt, simT);
-    // 画面のゆれ
+    // 出ている間は、出ている穴の真後ろへカメラが寄る（押す位置の判定は寄る前のカメラ基準のまま）
+    const P = CFG.peek, mp = holePos(g.mole.hole, CFG);
+    peek += ((state === 'play' ? clamp(g.mole.h, 0, 1) * P.amt : 0) - peek) * (1 - Math.exp(-dt * P.rate));
+    camX += (mp.x - camX) * (1 - Math.exp(-dt * P.rate));
     shakeAmp = Math.max(0, shakeAmp - dt * 1.4);
-    camera.position.set(C.pos[0] + (Math.random() - 0.5) * shakeAmp, C.pos[1] + (Math.random() - 0.5) * shakeAmp, C.pos[2]);
-    camera.lookAt(C.look[0], C.look[1], C.look[2]);
+    camera.position.set(lerp(C.pos[0], camX * P.xk, peek) + (Math.random() - 0.5) * shakeAmp, lerp(C.pos[1], P.y, peek) + (Math.random() - 0.5) * shakeAmp, lerp(C.pos[2], mp.z * P.zk + P.back, peek));
+    camera.lookAt(lerp(C.look[0], camX * P.lookXk, peek), lerp(C.look[1], P.lookY, peek), lerp(C.look[2], P.lookZ, peek));
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

@@ -145,7 +145,7 @@ function spawnPuffs(W, x, z, n) {
 function hammerGoal(kind, target) {
   if (kind === 'rest') return { x: 2.3, y: 1.3, z: -3.3, tilt: -0.25 };
   const p = holePos(target, CFG);
-  if (kind === 'raised') return { x: p.x, y: 3.7, z: p.z - 0.5, tilt: -0.75 };
+  if (kind === 'raised') return { x: p.x, y: 5.6, z: p.z - 0.5, tilt: -0.85 };
   return { x: p.x, y: 0.0, z: p.z, tilt: 0.12 };            // strike
 }
 const mixPose = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t), tilt: lerp(a.tilt, b.tilt, t) });

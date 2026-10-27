@@ -124,6 +124,8 @@ const CFG = {
   },
   // カメラ：モグラの目の高さ。台の手前の端から奥の人間を見上げる／少し見下ろす
   cam: { pos: [0, 6.0, 7.2], look: [0, 2.4, -1.6], hfov: 48 },
+  // モグラが出ている間、カメラが出ている穴の真後ろへ寄って低くなる（人間を見上げる＝モグラ側の絵）。amt＝寄せの強さ（0 で無効）
+  peek: { amt: 1, y: 3.8, back: 5.0, zk: 0.6, xk: 0.9, lookY: 2.1, lookZ: -3.6, lookXk: 0.7, rate: 7 },
 };
 // ===== 判定・点数・人間の動き（three.js を使わない純粋ロジック） =====
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -398,7 +400,7 @@ function spawnPuffs(W, x, z, n) {
 function hammerGoal(kind, target) {
   if (kind === 'rest') return { x: 2.3, y: 1.3, z: -3.3, tilt: -0.25 };
   const p = holePos(target, CFG);
-  if (kind === 'raised') return { x: p.x, y: 3.7, z: p.z - 0.5, tilt: -0.75 };
+  if (kind === 'raised') return { x: p.x, y: 5.6, z: p.z - 0.5, tilt: -0.85 };
   return { x: p.x, y: 0.0, z: p.z, tilt: 0.12 };            // strike
 }
 const mixPose = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t), tilt: lerp(a.tilt, b.tilt, t) });
@@ -507,7 +509,7 @@ function updateWorld(W, g, dt, now) {
   const W = createWorld(scene);
   const camera = new THREE.PerspectiveCamera(60, 9 / 16, 0.1, 80);
   const C = CFG.cam;
-  let shakeAmp = 0;
+  let shakeAmp = 0, peek = 0, camX = 0;
   const holePts = Array.from({ length: 9 }, () => ({ x: 0, y: 0 }));
 
   function fit() {
@@ -610,10 +612,13 @@ function updateWorld(W, g, dt, now) {
     const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs; simT += dt;
     if (state === 'play' && !freeze) { onEvents(stepGame(g, dt, press, CFG)); refreshHud(); }
     updateWorld(W, g, dt, simT);
-    // 画面のゆれ
+    // 出ている間は、出ている穴の真後ろへカメラが寄る（押す位置の判定は寄る前のカメラ基準のまま）
+    const P = CFG.peek, mp = holePos(g.mole.hole, CFG);
+    peek += ((state === 'play' ? clamp(g.mole.h, 0, 1) * P.amt : 0) - peek) * (1 - Math.exp(-dt * P.rate));
+    camX += (mp.x - camX) * (1 - Math.exp(-dt * P.rate));
     shakeAmp = Math.max(0, shakeAmp - dt * 1.4);
-    camera.position.set(C.pos[0] + (Math.random() - 0.5) * shakeAmp, C.pos[1] + (Math.random() - 0.5) * shakeAmp, C.pos[2]);
-    camera.lookAt(C.look[0], C.look[1], C.look[2]);
+    camera.position.set(lerp(C.pos[0], camX * P.xk, peek) + (Math.random() - 0.5) * shakeAmp, lerp(C.pos[1], P.y, peek) + (Math.random() - 0.5) * shakeAmp, lerp(C.pos[2], mp.z * P.zk + P.back, peek));
+    camera.lookAt(lerp(C.look[0], camX * P.lookXk, peek), lerp(C.look[1], P.lookY, peek), lerp(C.look[2], P.lookZ, peek));
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
