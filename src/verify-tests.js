@@ -145,3 +145,13 @@ function firstWhiff(d) {
   check('穴は 3×3 の 9 個で、重ならない', (() => { for (let i = 0; i < 9; i++) for (let j = i + 1; j < 9; j++) { const a = holePos(i, CFG), b = holePos(j, CFG); if (Math.hypot(a.x - b.x, a.z - b.z) < CFG.holes.r * 2) return false; } return true; })());
   check('行 0 が奥・行 2 が手前', holePos(0, CFG).z < holePos(6, CFG).z && holePos(0, CFG).x < holePos(2, CFG).x);
 })();
+
+// ---- タイミングバーの帯（離す時刻） ----
+(() => {
+  const Z = releaseZone(CFG);
+  const a = firstWhiff(Z.from), b = firstWhiff(Z.to), c = firstWhiff(Z.to + 0.1);
+  check('帯の始まりで離すと空振り、ギリギリ度は設定の下限（0.35）前後', a && near(a.close, CFG.assist.zoneNear, 0.1), JSON.stringify(a));
+  check('帯の終わりで離しても叩かれずに空振り（ギリギリ度は高い）', b && b.close > 0.7, JSON.stringify(b));
+  check('帯を過ぎて離すと叩かれる', c === null);
+  check('帯はバーの中（0〜total）に収まり、幅がある', Z.from > 0 && Z.to < Z.total && Z.to - Z.from > 0.05, JSON.stringify(Z));
+})();

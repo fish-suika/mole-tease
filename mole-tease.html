@@ -42,6 +42,14 @@
   #mini.on{opacity:1}
   #mini i{display:block;height:calc(var(--u)*4.4);border-radius:50%;background:rgba(255,255,255,.25)}
   #mini i.me{background:#ffd43b;box-shadow:0 0 calc(var(--u)*2) #ffd43b} #mini i.tg{background:#ff3b30}
+  #tunnel{position:absolute;inset:0;z-index:3;pointer-events:none;background:radial-gradient(ellipse at 50% 55%,rgba(0,0,0,0) 52%,rgba(34,18,12,.55) 82%,rgba(20,10,6,.92) 100%);opacity:0}
+  #danger{position:absolute;inset:0;z-index:4;pointer-events:none;box-shadow:inset 0 0 calc(var(--u)*26) calc(var(--u)*7) rgba(255,40,40,.95);opacity:0}
+  #clock{position:absolute;left:calc(var(--u)*9);right:calc(var(--u)*9);top:calc(env(safe-area-inset-top) + var(--u)*15.5);height:calc(var(--u)*4.6);z-index:5;pointer-events:none;border-radius:calc(var(--u)*2.3);background:rgba(20,16,24,.72);box-shadow:0 2px 0 rgba(0,0,0,.25);overflow:hidden;opacity:0;transition:opacity .12s}
+  #clock.on{opacity:1}
+  #clockZone{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,#ffe066,#ff922b 60%,#ff3b30)}
+  #clockFill{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(255,255,255,.42);border-right:calc(var(--u)*1.4) solid #fff;box-shadow:0 0 calc(var(--u)*2) #fff}
+  #clockLab{position:absolute;left:0;right:0;top:calc(var(--u)*21.5);text-align:center;font-size:calc(var(--u)*3.4);font-weight:900;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8);opacity:0;z-index:5;pointer-events:none;transition:opacity .12s}
+  #clockLab.on{opacity:.95}
   #pops{position:absolute;left:50%;top:38%;z-index:6;pointer-events:none}
   .pop{position:absolute;left:0;transform:translateX(-50%);font-size:calc(var(--u)*11);font-weight:900;white-space:nowrap;-webkit-text-stroke:calc(var(--u)*.8) #fff;paint-order:stroke fill;animation:floatUp 1.1s ease-out forwards}
   .pop small{display:block;text-align:center;font-size:.6em}
@@ -75,7 +83,10 @@
       <div class="chip" id="bumpBox"><span class="lump" id="lump0"></span><span class="lump" id="lump1"></span><span class="lump" id="lump2"></span></div>
     </div>
   </div>
+  <div id="tunnel"></div><div id="danger"></div>
   <div id="flash"></div>
+  <div id="clock"><div id="clockZone"></div><div id="clockFill"></div></div>
+  <div id="clockLab"><span class="ph">黄色いところで</span><span class="ph">離すと紙一重</span></div>
   <div id="mini"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="pops"></div>
   <div id="hint"><span class="ph">押している間だけ</span><span class="ph">顔を出す</span><br><span class="ph">ハンマーが来る前に</span><span class="ph">離せ</span></div>
@@ -133,6 +144,8 @@ const CFG = {
   },
   // カメラ：モグラの目の高さ。台の手前の端から奥の人間を見上げる／少し見下ろす
   cam: { pos: [0, 6.0, 7.2], look: [0, 2.4, -1.6], hfov: 48 },
+  // タイミングバー（振りかぶりの間だけ出る補助）。zoneFrom＝ここから先で離すと「ギリギリ」（ギリギリ度の下限）、assist＝false で非表示
+  assist: { bar: true, zoneNear: 0.35 },
   // モグラが出ている間は一人称視点：カメラがモグラの目の位置へ降りる（引っ込むと元の俯瞰）。amt＝0 で無効
   // eyeBase＋eyeK×高さ＝目の高さ、back＝穴の中心より後ろへ、pitch＝見上げる角度（度）、windupPitch＝振りかぶりのあいだ頭上のハンマーを見上げる分（度）、hideAt＝この寄り具合を超えたらモグラの体を隠す（鼻と手だけ残す）
   fps: { amt: 1, eyeBase: 0.08, eyeK: 0.92, back: 0.45, pitch: 11, lookDist: 10, lookXk: 0.25, rate: 9, hideAt: 0.35, fov: 84, windupPitch: 42, tiltRate: 6 },
@@ -230,6 +243,12 @@ function humanStep(hu, dt, m, now, CFG) {
   return ev;
 }
 
+// 振りかぶり開始からの「離す時刻」の帯（タイミングバー用）。from＝これ以降に離すとギリギリ度が zoneNear 以上、to＝これを過ぎると叩かれる直前。total＝振りかぶり＋振り下ろし
+function releaseZone(CFG) {
+  const total = CFG.human.windup + CFG.human.strike, fallT = (1 - CFG.mole.hitH) / CFG.mole.fall;
+  return { total, from: total - fallT - (1 - CFG.assist.zoneNear) * CFG.score.nearWindow, to: total - fallT - 0.02 };
+}
+
 // ---- 点数 ----
 function whiffPoints(close, mult, CFG) { return Math.round((CFG.score.whiffBase + CFG.score.whiffNear * close * close) * mult); }
 function whiffLabel(close) { return close >= 0.7 ? '紙一重！' : close >= 0.35 ? 'ギリギリ！' : 'スカッ'; }
@@ -304,9 +323,9 @@ function buildMole() {
     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), fur); ear.position.set(s * 0.44, 1.2, 0.04); g.add(ear); shell.push(ear);
     const inner = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), pink); inner.position.set(s * 0.44, 1.2, -0.08); g.add(inner); shell.push(inner);
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), dark); eye.position.set(s * 0.24, 0.98, -0.53); g.add(eye); shell.push(eye);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), pink); hand.position.set(s * 0.4, 0.66, -0.52); hand.scale.set(1, 0.7, 1.2); g.add(hand);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), pink); hand.position.set(s * 0.4, 0.66, -0.52); hand.scale.set(1, 0.7, 1.2); g.add(hand); shell.push(hand);
   }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), pink); nose.position.set(0, 0.8, -0.64); g.add(nose);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), pink); nose.position.set(0, 0.8, -0.64); g.add(nose); shell.push(nose);
   // 叩かれたときの星
   const stars = new THREE.Group(); stars.position.y = 1.75;
   for (let i = 0; i < 3; i++) {
@@ -564,6 +583,10 @@ function updateWorld(W, g, dt, now) {
     const d = document.createElement('div'); d.className = 'pop ' + cls; d.innerHTML = html;
     $('pops').appendChild(d); setTimeout(() => d.remove(), 1150);
   }
+  {   // タイミングバーの帯：引っ込むのに掛かる時間を見込んで、ギリギリ度が zoneNear 以上になる離し方〜当たる直前まで
+    const Z = releaseZone(CFG), total = Z.total, from = Z.from, to = Z.to, zone = $('clockZone');
+    zone.style.left = (from / total * 100) + '%'; zone.style.width = ((to - from) / total * 100) + '%';
+  }
   function show(id, on) { $(id).classList.toggle('on', on); }
 
   function startGame() {
@@ -639,6 +662,15 @@ function updateWorld(W, g, dt, now) {
     const fov = lerp(baseFov, P.fov, peek);
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     W.fpsView = peek > P.hideAt;
+    $('tunnel').style.opacity = peek;
+    {   // 危険の知らせ：振りかぶりが進むほど画面の縁が赤く、脈打つ。タイミングバーは「ここで離すと紙一重」の帯つき
+      const hu = g.human, A = CFG.assist, danger = state === 'play' && (hu.phase === 'windup' || hu.phase === 'strike');
+      const total = releaseZone(CFG).total, u = danger ? clamp((hu.phase === 'windup' ? hu.t : CFG.human.windup + hu.t) / total, 0, 1) : 0;
+      $('danger').style.opacity = danger ? clamp(Math.pow(u, 1.5) * (0.65 + 0.35 * Math.sin(simT * (9 + 18 * u))) + 0.08, 0, 1) : 0;
+      const showBar = danger && A.bar;
+      $('clock').classList.toggle('on', showBar); $('clockLab').classList.toggle('on', showBar && g.whiffs < 3);
+      if (showBar) $('clockFill').style.width = (u * 100) + '%';
+    }
     const mini = $('mini'); mini.classList.toggle('on', state === 'play' && peek > 0.2);
     if (state === 'play') { const cells = mini.children, hu = g.human, aim = hu.phase === 'windup' || hu.phase === 'strike' ? hu.target : -1; for (let i = 0; i < 9; i++) cells[i].className = i === aim ? 'tg' : i === g.mole.hole ? 'me' : ''; }
     renderer.render(scene, camera);

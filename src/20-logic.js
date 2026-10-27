@@ -91,6 +91,12 @@ function humanStep(hu, dt, m, now, CFG) {
   return ev;
 }
 
+// 振りかぶり開始からの「離す時刻」の帯（タイミングバー用）。from＝これ以降に離すとギリギリ度が zoneNear 以上、to＝これを過ぎると叩かれる直前。total＝振りかぶり＋振り下ろし
+function releaseZone(CFG) {
+  const total = CFG.human.windup + CFG.human.strike, fallT = (1 - CFG.mole.hitH) / CFG.mole.fall;
+  return { total, from: total - fallT - (1 - CFG.assist.zoneNear) * CFG.score.nearWindow, to: total - fallT - 0.02 };
+}
+
 // ---- 点数 ----
 function whiffPoints(close, mult, CFG) { return Math.round((CFG.score.whiffBase + CFG.score.whiffNear * close * close) * mult); }
 function whiffLabel(close) { return close >= 0.7 ? '紙一重！' : close >= 0.35 ? 'ギリギリ！' : 'スカッ'; }

@@ -39,9 +39,9 @@ function buildMole() {
     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), fur); ear.position.set(s * 0.44, 1.2, 0.04); g.add(ear); shell.push(ear);
     const inner = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), pink); inner.position.set(s * 0.44, 1.2, -0.08); g.add(inner); shell.push(inner);
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), dark); eye.position.set(s * 0.24, 0.98, -0.53); g.add(eye); shell.push(eye);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), pink); hand.position.set(s * 0.4, 0.66, -0.52); hand.scale.set(1, 0.7, 1.2); g.add(hand);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), pink); hand.position.set(s * 0.4, 0.66, -0.52); hand.scale.set(1, 0.7, 1.2); g.add(hand); shell.push(hand);
   }
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), pink); nose.position.set(0, 0.8, -0.64); g.add(nose);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10), pink); nose.position.set(0, 0.8, -0.64); g.add(nose); shell.push(nose);
   // 叩かれたときの星
   const stars = new THREE.Group(); stars.position.y = 1.75;
   for (let i = 0; i < 3; i++) {

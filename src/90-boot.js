@@ -53,6 +53,10 @@
     const d = document.createElement('div'); d.className = 'pop ' + cls; d.innerHTML = html;
     $('pops').appendChild(d); setTimeout(() => d.remove(), 1150);
   }
+  {   // タイミングバーの帯：引っ込むのに掛かる時間を見込んで、ギリギリ度が zoneNear 以上になる離し方〜当たる直前まで
+    const Z = releaseZone(CFG), total = Z.total, from = Z.from, to = Z.to, zone = $('clockZone');
+    zone.style.left = (from / total * 100) + '%'; zone.style.width = ((to - from) / total * 100) + '%';
+  }
   function show(id, on) { $(id).classList.toggle('on', on); }
 
   function startGame() {
@@ -128,6 +132,15 @@
     const fov = lerp(baseFov, P.fov, peek);
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     W.fpsView = peek > P.hideAt;
+    $('tunnel').style.opacity = peek;
+    {   // 危険の知らせ：振りかぶりが進むほど画面の縁が赤く、脈打つ。タイミングバーは「ここで離すと紙一重」の帯つき
+      const hu = g.human, A = CFG.assist, danger = state === 'play' && (hu.phase === 'windup' || hu.phase === 'strike');
+      const total = releaseZone(CFG).total, u = danger ? clamp((hu.phase === 'windup' ? hu.t : CFG.human.windup + hu.t) / total, 0, 1) : 0;
+      $('danger').style.opacity = danger ? clamp(Math.pow(u, 1.5) * (0.65 + 0.35 * Math.sin(simT * (9 + 18 * u))) + 0.08, 0, 1) : 0;
+      const showBar = danger && A.bar;
+      $('clock').classList.toggle('on', showBar); $('clockLab').classList.toggle('on', showBar && g.whiffs < 3);
+      if (showBar) $('clockFill').style.width = (u * 100) + '%';
+    }
     const mini = $('mini'); mini.classList.toggle('on', state === 'play' && peek > 0.2);
     if (state === 'play') { const cells = mini.children, hu = g.human, aim = hu.phase === 'windup' || hu.phase === 'strike' ? hu.target : -1; for (let i = 0; i < 9; i++) cells[i].className = i === aim ? 'tg' : i === g.mole.hole ? 'me' : ''; }
     renderer.render(scene, camera);
