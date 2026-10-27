@@ -1,5 +1,7 @@
 // ===== 判定・点数・人間の動き（three.js を使わない純粋ロジック） =====
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
 
 // 穴 i（0〜8）の台上の位置。行 0＝奥、行 2＝手前
 function holePos(i, CFG) {
@@ -190,3 +192,42 @@ function stepGame(g, dt, press, CFG) {
   else if (g.t >= CFG.duration) { g.over = true; g.reason = 'escaped'; ev.push({ type: 'end', reason: g.reason }); }
   return ev;
 }
+
+// ---- 演出の時間割（開始・退場）。three.js なしで決める ----
+const INTRO_DUR = 3.2, OUTRO_DUR = 2.8;
+
+// 開始：暗い地下から穴をのぞく → 人間が左から歩いてくる → コインを入れる → ハンマーを構えてにらむ
+function introState(t) {
+  const walkU = clamp((t - 0.3) / 1.4, 0, 1);
+  return {
+    x: -9 * (1 - easeOut(walkU)), walking: t >= 0.3 && t < 1.7,
+    moleH: easeOut(clamp(t / 0.9, 0, 1)) * 0.9,          // モグラがそっと顔を出す
+    camU: easeOut(clamp(t / 1.0, 0, 1)),                   // カメラが地下から目の高さへ上がる
+    irisU: easeOut(clamp(t / 1.1, 0, 1)),                  // 穴の光が広がる
+    coinU: t >= 1.7 && t < 2.3 ? (t - 1.7) / 0.6 : -1,     // コインが飛ぶ（-1＝飛んでいない）
+    hoverU: easeOut(clamp((t - 2.1) / 0.5, 0, 1)),         // ハンマーを穴の上に構える
+    mood: t < 2.1 ? 'calm' : 'aim',
+  };
+}
+
+// 退場：逃げきり＝ハンマーを台に置いて、肩を落としてとぼとぼ去る（全員共通）／叩かれて終わり＝ガッツポーズして満足げに去る
+function outroState(t, reason) {
+  const esc = reason === 'escaped', leaveFrom = esc ? 1.3 : 1.0, walkU = clamp((t - leaveFrom) / 1.5, 0, 1);
+  return {
+    x: 9 * walkU * walkU, walking: walkU > 0 && walkU < 1,
+    downU: esc ? easeOut(clamp(t / 0.7, 0, 1)) : 0,                                     // ハンマーを台に置く
+    slumpU: esc ? easeOut(clamp((t - 0.6) / 0.6, 0, 1)) : 0,                            // 肩を落とす
+    fistU: esc ? 0 : easeOut(clamp(t / 0.25, 0, 1)) * (1 - clamp((t - 0.8) / 0.3, 0, 1)),   // ガッツポーズ
+    mood: esc ? (t < 0.6 ? 'calm' : 'sad') : 'happy',
+    moleH: esc ? easeOut(clamp((t - 0.5) / 0.4, 0, 1)) : null,                          // 逃げきったモグラがぴょこっと出る
+  };
+}
+
+// ---- X 共有 ----
+// res＝{ name, score, maxStage, reason }
+function shareText(res, cfg) {
+  const line = res.maxStage > 0 ? res.name + 'を「' + cfg.stages[res.maxStage].name + '」まで怒らせた！' : res.name + 'に挑戦！';
+  return '叩かれないモグラ：' + line + ' ' + res.score + '点' + (res.reason === 'escaped' ? '（逃げきり）' : '') + ' #' + cfg.share.hashtag;
+}
+// PC 用：X の投稿画面を開く URL
+function tweetUrl(text, url) { return 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + (url ? '&url=' + encodeURIComponent(url) : ''); }

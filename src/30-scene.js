@@ -1,6 +1,4 @@
 // ===== 3D の世界：モグラ叩き台・モグラ・人間・ハンマー =====
-const lerp = (a, b, t) => a + (b - a) * t;
-const easeOut = t => 1 - Math.pow(1 - t, 3);
 
 function lm(color, extra) { return new THREE.MeshLambertMaterial(Object.assign({ color }, extra)); }
 
@@ -126,7 +124,7 @@ function buildHuman(id) {
   const handR2 = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), skin), armR2 = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12), shirt);   // 2本目のハンマーを持つ手（錯乱）
   armR2.visible = handR2.visible = false;
   g.add(armR, armL, handR, handL, armR2, handR2);
-  g.userData = { id, head, pupils, brows, smile, open, steam, armR, armL, handR, handL, armR2, handR2, skin, cheek, baseSkin: new THREE.Color(L.skin) };
+  g.userData = { id, head, body, eyes, pupils, brows, smile, open, steam, armR, armL, handR, handL, armR2, handR2, skin, cheek, baseSkin: new THREE.Color(L.skin) };
   body.scale.setScalar(L.scale); g.userData.hs = L.scale;
   return g;
 }
@@ -158,6 +156,7 @@ function createWorld(scene) {
   for (const id of ['kid', 'uncle', 'granny']) { const h = buildHuman(id); h.position.set(0, 0, -5.3); h.visible = false; scene.add(h); W.humans[id] = h; }
   W.hammer = buildHammer(); scene.add(W.hammer);
   W.hammer2 = buildHammer(); W.hammer2.visible = false; scene.add(W.hammer2);
+  W.coin = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.08, 20), new THREE.MeshPhongMaterial({ color: 0xffd43b, shininess: 90 })); W.coin.visible = false; scene.add(W.coin);   // 開始のコイン
   const mkShadow = () => { const s = new THREE.Mesh(new THREE.CircleGeometry(1, 28), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false })); s.rotation.x = -Math.PI / 2; s.position.y = 0.03; scene.add(s); return s; };
   W.shadow = mkShadow(); W.shadow2 = mkShadow();
   for (let i = 0; i < 12; i++) {
@@ -167,14 +166,16 @@ function createWorld(scene) {
   return W;
 }
 
-function spawnPuffs(W, x, z, n) {
+// 土ぼこり（star＝true なら黄色い星が上へ弾ける）
+function spawnPuffs(W, x, z, n, star) {
   let k = 0;
   for (const p of W.puffs) {
     if (p.life > 0 || k >= n) continue;
-    const a = Math.random() * Math.PI * 2, sp = 1.2 + Math.random() * 1.6;
-    p.life = 0.5 + Math.random() * 0.25; p.max = p.life;
-    p.vx = Math.cos(a) * sp; p.vz = Math.sin(a) * sp; p.vy = 1.4 + Math.random() * 1.2;
-    p.mesh.position.set(x, 0.2, z); p.mesh.visible = true; k++;
+    const a = Math.random() * Math.PI * 2, sp = (star ? 1.8 : 1.2) + Math.random() * 1.6;
+    p.life = (star ? 0.8 : 0.5) + Math.random() * 0.25; p.max = p.life; p.star = !!star;
+    p.vx = Math.cos(a) * sp; p.vz = Math.sin(a) * sp; p.vy = (star ? 3.2 : 1.4) + Math.random() * 1.4;
+    p.mesh.material.color.setHex(star ? 0xffd43b : 0xf1e3c8);
+    p.mesh.position.set(x, star ? 0.9 : 0.2, z); p.mesh.visible = true; k++;
   }
 }
 
@@ -205,15 +206,19 @@ function reach(U, arm, hand, base, pose, scale, r) {
   stretch(arm, base, grip, r); hand.position.copy(grip);
 }
 
-// ゲームの状態を 3D に反映する
-function updateWorld(W, g, dt, now) {
+// ゲームの状態を 3D に反映する。X＝{ mode: 'play' | 'intro' | 'outro', t, reason }（演出中は人間・ハンマー・モグラをこちらの時間割で動かす）
+function updateWorld(W, g, dt, now, X) {
+  X = X || { mode: 'play', t: 0, reason: '' };
   const m = g.mole, hu = g.human, S = CFG.stages[g.stage];
+  const ist = X.mode === 'intro' ? introState(X.t) : null, ost = X.mode === 'outro' ? outroState(X.t, X.reason) : null, scripted = !!(ist || ost);
+  const escaped = X.reason === 'escaped';
 
   // --- 今回の人だけ見せる ---
   const H = W.humans[g.person.id];
   if (W.human !== H) { if (W.human) W.human.visible = false; W.human = H; H.visible = true; W.key = -1; applyHammerLook(W.hammer, LOOK[g.person.id].hammer); applyHammerLook(W.hammer2, LOOK[g.person.id].hammer); }
   const hsz = LOOK[g.person.id].hammer.size;
   const U = H.userData, hs = U.hs;
+  H.position.x = ist ? ist.x : ost ? ost.x : 0;
 
   // --- モグラ ---
   const mp = holePos(m.hole, CFG);
@@ -223,6 +228,7 @@ function updateWorld(W, g, dt, now) {
   const flat = m.stun > CFG.mole.stunTime - CFG.mole.flatTime;
   mg.scale.set(flat ? 1.25 : 1, flat ? 0.6 : 1, flat ? 1.25 : 1);
   mg.rotation.z = m.stun > 0 ? Math.sin(now * 30) * 0.12 : Math.sin(now * 9) * 0.04 * m.h;
+  if (ost && escaped && ost.moleH > 0.9) { mg.position.y += Math.abs(Math.sin(now * 9)) * 0.35; mg.rotation.z = Math.sin(now * 12) * 0.2; }   // 逃げきったモグラが跳ねて喜ぶ
   const stars = mg.userData.stars;
   stars.visible = m.stun > 0; stars.rotation.y = now * 9;
   stars.position.y = 1.75 + 0.15 * Math.sin(now * 12);
@@ -235,7 +241,14 @@ function updateWorld(W, g, dt, now) {
   let raised = hammerGoal('raised', tg); const hitP = hammerGoal('strike', tg), hover = hammerGoal('hover', tg);
   if (hu.feint) raised = { x: raised.x, y: lerp(rest.y, raised.y, 0.62), z: raised.z, tilt: lerp(rest.tilt, raised.tilt, 0.62) };   // フェイントは上げきらない（見分けるヒント）
   let pose;
-  if (hu.phase === 'windup') {
+  if (ist) {                                                           // 開始：ハンマーを持って歩いてきて、穴の上に構える
+    const carry = Object.assign({}, rest, { x: rest.x + ist.x });
+    pose = mixPose(carry, hammerGoal('hover', 4), ist.hoverU);
+  } else if (ost) {                                                    // 退場：台に置く／ガッツポーズ／持って去る
+    const carry = Object.assign({}, rest, { x: rest.x + ost.x });
+    if (escaped) pose = mixPose(carry, { x: 1.8, y: 0.38, z: -0.9, tilt: 1.45 }, ost.downU);
+    else pose = mixPose(carry, { x: 2.0 + ost.x, y: 4.4, z: -3.4, tilt: -0.25 }, ost.fistU);
+  } else if (hu.phase === 'windup') {
     const u = clamp(hu.t / hu.dur, 0, 1);
     pose = mixPose(W.from, raised, easeOut(clamp(u / 0.7, 0, 1)));
     if (u > 0.7) { pose.x += Math.sin(now * 55) * 0.06 * (u - 0.7) / 0.3; pose.y += Math.sin(now * 40) * 0.05; }
@@ -248,22 +261,23 @@ function updateWorld(W, g, dt, now) {
     pose.y += Math.sin(now * 9) * 0.06;
   } else if (hu.phase === 'recover') {
     const u = clamp(hu.t / hu.recover, 0, 1);
-    if (hu.mood === 'happy' || hu.mood === 'miss' || hu.mood === 'confuse') pose = mixPose(hitP, rest, easeOut(clamp((u - 0.35) / 0.65, 0, 1)));
-    if (hu.mood === 'miss' && U.id === 'kid') pose.y += Math.abs(Math.sin(hu.t * 17)) * 0.5 * (1 - u) * (u < 0.6 ? 1 : 0);   // 悔しくてハンマーを台にトントン（立ち直りの時間の中だけ）
-    else if (hu.mood === 'feint') {   // 途中まで振り下ろして空中でぴたっと止め、にやり。そのあと引く（「わざと」と分かる動き）
+    if (hu.mood === 'feint') {   // 途中まで振り下ろして空中でぴたっと止め、にやり。そのあと引く（「わざと」と分かる動き）
       const fake = mixPose(W.from, hitP, 0.28);
       pose = u < 0.3 ? mixPose(W.from, fake, Math.sqrt(u / 0.3)) : u < 0.65 ? { x: fake.x + Math.sin(now * 40) * 0.05, y: fake.y + Math.sin(now * 34) * 0.04, z: fake.z, tilt: fake.tilt } : mixPose(fake, rest, easeOut((u - 0.65) / 0.35));
+    } else if (hu.mood === 'happy' || hu.mood === 'miss' || hu.mood === 'confuse') {   // 叩いた位置でしばらく止めてから戻す
+      pose = mixPose(hitP, rest, easeOut(clamp((u - 0.35) / 0.65, 0, 1)));
+      if (hu.mood === 'miss' && U.id === 'kid') pose.y += Math.abs(Math.sin(hu.t * 17)) * 0.5 * (1 - u) * (u < 0.6 ? 1 : 0);   // 悔しくてハンマーを台にトントン（立ち直りの時間の中だけ）
     } else pose = mixPose(W.from, rest, easeOut(u));
   } else {
     pose = mixPose(W.pose, rest, 1 - Math.exp(-dt * 7));
   }
   W.pose = pose;
-  W.scaleS = lerp(W.scaleS || 1, hu.phase === 'windup' || hu.phase === 'strike' ? CFG.stages[hu.stage].scale : S.scale, 1 - Math.exp(-dt * 9));
+  W.scaleS = lerp(W.scaleS || 1, !scripted && (hu.phase === 'windup' || hu.phase === 'strike') ? CFG.stages[hu.stage].scale : S.scale, 1 - Math.exp(-dt * 9));
   const sc = W.scaleS * hsz;   // 段階の大きさ × 人ごとのハンマーの大きさ
   const hm = W.hammer; hm.scale.setScalar(sc); hm.position.set(pose.x, pose.y, pose.z); hm.rotation.x = pose.tilt;
 
   // --- ハンマー（2本目：錯乱） ---
-  const two = hu.target2 >= 0 && (hu.phase === 'windup' || hu.phase === 'strike' || hu.phase === 'recover');
+  const two = !scripted && hu.target2 >= 0 && (hu.phase === 'windup' || hu.phase === 'strike' || hu.phase === 'recover');
   W.hammer2.visible = two; U.armR2.visible = U.handR2.visible = two;
   let pose2 = null;
   if (two) {
@@ -272,7 +286,7 @@ function updateWorld(W, g, dt, now) {
   }
 
   // 影と縁（予告）
-  const warn = hu.phase === 'windup' || hu.phase === 'strike';
+  const warn = !scripted && (hu.phase === 'windup' || hu.phase === 'strike');
   for (let i = 0; i < 9; i++) {
     const hot = warn && (i === hu.target || i === hu.target2) && !hu.feint;
     W.rims[i].material.color.setHex(hot ? (Math.floor(now * 14) % 2 ? 0xff3b30 : 0xffd43b) : 0xffd43b);
@@ -285,10 +299,20 @@ function updateWorld(W, g, dt, now) {
   shade(W.shadow, hu.target, warn, wu, sc);
   shade(W.shadow2, hu.target2, warn && hu.target2 >= 0, wu, CFG.stages[hu.stage].scale * hsz);
 
+  // --- コイン（開始：人間が台にコインを入れる） ---
+  const coin = W.coin;
+  if (ist && ist.coinU >= 0) {
+    const u = ist.coinU;
+    coin.visible = true; coin.position.set(lerp(1.6, 0.9, u), lerp(2.6, 0.18, u) + Math.sin(Math.PI * u) * 1.6, lerp(-4.2, -3.0, u)); coin.rotation.x = now * 16; coin.rotation.z = now * 5;
+  } else coin.visible = false;
+
   // --- 人間（腕・表情・怒り） ---
   const humanPos = H.position;
   const shR = _v2.set(humanPos.x + 1.65 * hs, 2.8 * hs, humanPos.z + 0.1 * hs);
-  reach(U, U.armR, U.handR, shR, pose, sc, 0.3);
+  if (ost && escaped && ost.downU >= 0.99) {                                      // ハンマーを置いたあと、手をだらんと下げる
+    const hang = _v1.set(humanPos.x + 1.9 * hs, 1.0 * hs, humanPos.z + 0.7);
+    stretch(U.armR, shR, hang, 0.3); U.handR.position.copy(hang);
+  } else reach(U, U.armR, U.handR, shR, pose, sc, 0.3);
   U.armR.position.sub(humanPos); U.handR.position.sub(humanPos);
   if (two) {
     const shR2 = _v3.set(humanPos.x - 1.65 * hs, 2.8 * hs, humanPos.z + 0.1 * hs);
@@ -296,6 +320,8 @@ function updateWorld(W, g, dt, now) {
     U.armR2.position.sub(humanPos); U.handR2.position.sub(humanPos);
   }
   const shL = _v4.set(-1.65 * hs, 2.8 * hs, 0.1 * hs), handLp = new THREE.Vector3(-2.0, 0.6, 1.5);
+  if (ost && !escaped && ost.fistU > 0.05) handLp.set(-2.4, 3.6 * hs, 0.8);        // 叩かれて終わり：左手も突き上げる
+  if (ost && escaped && ost.slumpU > 0.3) handLp.set(-1.9, 0.9, 0.7);              // 逃げきり：左手もだらん
   stretch(U.armL, shL, handLp, 0.3); U.handL.position.copy(handLp);
   if (two) { U.armL.visible = U.handL.visible = false; } else { U.armL.visible = U.handL.visible = true; }
 
@@ -305,45 +331,57 @@ function updateWorld(W, g, dt, now) {
 
   // 表情（文字なし。顔と動きだけ）
   const sg = g.stage;
-  let mood = hu.mood; if (mood === 'calm' && sg >= 3) mood = 'rage';
-  U.smile.visible = mood === 'calm' || mood === 'aim' || mood === 'happy' || mood === 'feint';
+  let mood = ist ? ist.mood : ost ? ost.mood : hu.mood; if (mood === 'calm' && sg >= 3 && !scripted) mood = 'rage';
+  const blink = (now % 3.1) < 0.12, eyeOpen = mood === 'happy' ? 0.12 : blink ? 0.1 : 1;   // まばたき・笑って目を細める
+  U.eyes[0].scale.y = U.eyes[1].scale.y = 1.15 * eyeOpen; U.pupils[0].visible = U.pupils[1].visible = eyeOpen > 0.4;
+  U.smile.visible = mood === 'calm' || mood === 'aim' || mood === 'happy' || mood === 'feint' || mood === 'sad';
+  U.smile.rotation.z = mood === 'sad' ? 0 : Math.PI;                             // しょんぼりは口がへの字
   U.open.visible = mood === 'miss' || mood === 'rage' || mood === 'confuse';
   U.smile.scale.setScalar(mood === 'happy' || mood === 'feint' ? 1.35 : mood === 'aim' ? 0.7 : 1);
-  U.smile.position.y = mood === 'aim' ? -0.42 : -0.28;
-  const browTilt = mood === 'aim' ? 0.45 + sg * 0.06 : mood === 'miss' ? (U.id === 'kid' ? 0.55 : -0.35) : mood === 'confuse' ? -0.25 : mood === 'happy' ? -0.15 : mood === 'rage' ? 0.6 : mood === 'feint' ? 0.3 : sg * 0.08;
+  U.smile.position.y = mood === 'aim' ? -0.42 : mood === 'sad' ? -0.5 : -0.28;
+  const browTilt = mood === 'aim' ? 0.45 + sg * 0.06 : mood === 'miss' ? (U.id === 'kid' ? 0.55 : -0.35) : mood === 'confuse' ? -0.25 : mood === 'happy' ? -0.15 : mood === 'sad' ? -0.5 : mood === 'rage' ? 0.6 : mood === 'feint' ? 0.3 : sg * 0.08;
   U.brows[0].rotation.z = -browTilt; U.brows[1].rotation.z = browTilt;
   U.brows[0].position.y = U.brows[1].position.y = mood === 'miss' ? 0.72 : 0.58;
-  const gz = hu.target >= 0 && (hu.phase === 'windup' || hu.phase === 'strike') ? holePos(hu.target, CFG) : { x: 0, z: 0 };
-  const swirl = sg >= 4 ? Math.sin(now * 22) * 0.1 : 0;
+  const gz = ist && ist.hoverU > 0.3 ? holePos(4, CFG) : !scripted && hu.target >= 0 && (hu.phase === 'windup' || hu.phase === 'strike') ? holePos(hu.target, CFG) : { x: 0, z: 0 };
+  const swirl = sg >= 4 && !scripted ? Math.sin(now * 22) * 0.1 : 0;
   const away = mood === 'confuse' ? 0.1 : 0;
   U.pupils[0].position.x = -0.46 + away + clamp(gz.x * 0.06, -0.1, 0.1) + swirl; U.pupils[1].position.x = 0.46 + away + clamp(gz.x * 0.06, -0.1, 0.1) + swirl;
-  U.pupils[0].position.y = U.pupils[1].position.y = 0.14 - (warn ? 0.07 : 0) + (sg >= 4 ? Math.cos(now * 22) * 0.08 : 0);
+  U.pupils[0].position.y = U.pupils[1].position.y = 0.14 - (warn || (ist && ist.hoverU > 0.3) ? 0.07 : 0) - (mood === 'sad' ? 0.07 : 0) + (sg >= 4 && !scripted ? Math.cos(now * 22) * 0.08 : 0);
   // 体の動き：振りかぶりで反る、空振りで首をふる、当てたら弾む、フェイントで肩をゆらす、激怒で台をバンバン
-  let lean = 0, shake = 0, bob = 0;
-  if (hu.phase === 'windup') lean = -0.12 * clamp(hu.t / hu.dur, 0, 1);
-  else if (hu.phase === 'strike') lean = 0.2;
-  else if (hu.phase === 'recover' && hu.mood === 'miss') { shake = Math.sin(hu.t * 28) * 0.18 * (1 - hu.t / hu.recover); if (U.id === 'kid') { bob = Math.abs(Math.sin(hu.t * 16)) * 0.5 * (1 - hu.t / hu.recover); shake *= 1.8; } }   // 子どもは地団駄
-  else if (hu.phase === 'recover' && hu.mood === 'happy') bob = Math.abs(Math.sin(hu.t * 12)) * 0.25;
-  else if (hu.phase === 'recover' && hu.mood === 'feint') bob = Math.abs(Math.sin(hu.t * 16)) * 0.12;
-  if (sg >= 3 && hu.phase === 'idle') bob += Math.abs(Math.sin(now * 14)) * 0.14;
-  if (U.id === 'kid' && (hu.phase === 'idle' || hu.phase === 'recover' && hu.mood !== 'happy')) { bob += Math.abs(Math.sin(now * 11)) * 0.22; shake += Math.sin(now * 7) * 0.16; }   // せっかち：じっとしていない
-  if (sg >= 4) shake += Math.sin(now * 40) * 0.08;
+  let lean = 0, shake = 0, bob = 0, slump = 0, nod = 0;
+  if (ist) { if (ist.walking) { bob = Math.abs(Math.sin(X.t * 10)) * 0.22; shake = Math.sin(X.t * 5) * 0.1; } if (ist.hoverU > 0.3) lean = -0.06; }
+  else if (ost) {
+    slump = ost.slumpU;
+    if (ost.walking) bob = escaped ? Math.abs(Math.sin(X.t * 6)) * 0.1 : Math.abs(Math.sin(X.t * 9)) * 0.3;     // とぼとぼ／はずんで
+    if (!escaped) { bob += ost.fistU * Math.abs(Math.sin(X.t * 14)) * 0.5; nod = -0.15; }                       // ガッツポーズは胸をはって跳ねる
+  } else {
+    if (hu.phase === 'windup') lean = -0.12 * clamp(hu.t / hu.dur, 0, 1);
+    else if (hu.phase === 'strike') lean = 0.2;
+    else if (hu.phase === 'recover' && hu.mood === 'miss') { shake = Math.sin(hu.t * 28) * 0.18 * (1 - hu.t / hu.recover); if (U.id === 'kid') { bob = Math.abs(Math.sin(hu.t * 16)) * 0.5 * (1 - hu.t / hu.recover); shake *= 1.8; } }   // 子どもは地団駄
+    else if (hu.phase === 'recover' && hu.mood === 'happy') bob = Math.abs(Math.sin(hu.t * 12)) * 0.25;
+    else if (hu.phase === 'recover' && hu.mood === 'feint') bob = Math.abs(Math.sin(hu.t * 16)) * 0.12;
+    if (sg >= 3 && hu.phase === 'idle') bob += Math.abs(Math.sin(now * 14)) * 0.14;
+    if (U.id === 'kid' && (hu.phase === 'idle' || hu.phase === 'recover' && hu.mood !== 'happy')) { bob += Math.abs(Math.sin(now * 11)) * 0.22; shake += Math.sin(now * 7) * 0.16; }   // せっかち：じっとしていない
+    if (sg >= 4) shake += Math.sin(now * 40) * 0.08;
+  }
   U.head.rotation.z = mood === 'confuse' ? 0.3 : mood === 'feint' ? Math.sin(now * 9) * 0.14 : 0;   // ぽかんと首をかしげる／にやりとゆらす
   W.pulse = Math.max(0, (W.pulse || 0) - dt * 2.2);   // 段階が上がった瞬間にぷくっと膨らんで震える
   shake += Math.sin(now * 60) * 0.16 * W.pulse;
   U.head.scale.setScalar(1 + 0.32 * W.pulse);
-  U.head.rotation.x = lean * 0.6; U.head.rotation.y = shake; U.head.position.y = 4.2 + bob;
+  U.head.rotation.x = lean * 0.6 + 0.45 * slump + nod; U.head.rotation.y = shake; U.head.position.y = 4.2 + bob - 0.3 * slump;   // 肩を落として首をたれる
+  U.body.rotation.x = 0.2 * slump;
   // 湯気
-  U.steam.visible = sg >= 3;
+  U.steam.visible = sg >= 3 && !scripted;
   if (U.steam.visible) U.steam.children.forEach(p => { const { s, k } = p.userData, ph = (now * 1.4 + k * 0.5) % 1; p.position.set(s * (1.3 + ph * 0.3), 0.2 + ph * 1.6, 0.3); p.scale.setScalar(0.5 + ph * 0.9); p.material.opacity = 0.7 * (1 - ph); });
 
-  // --- 土ぼこり ---
+  // --- 土ぼこり・星 ---
   for (const p of W.puffs) {
     if (p.life <= 0) continue;
     p.life -= dt;
     if (p.life <= 0) { p.mesh.visible = false; continue; }
     const t = 1 - p.life / p.max;
     p.mesh.position.x += p.vx * dt; p.mesh.position.z += p.vz * dt; p.vy -= 5 * dt; p.mesh.position.y = Math.max(0.1, p.mesh.position.y + p.vy * dt);
-    p.mesh.scale.setScalar(0.6 + t * 1.4); p.mesh.material.opacity = 0.75 * (1 - t);
+    p.mesh.scale.setScalar(p.star ? 0.5 * (1 - t * 0.6) : 0.6 + t * 1.4); p.mesh.material.opacity = (p.star ? 1 : 0.75) * (1 - t);
+    if (p.star) p.mesh.rotation.y += dt * 12;
   }
 }

@@ -42,6 +42,11 @@
   #scoreBox.bump{animation:bump .3s ease-out}
   @keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.2)}100%{transform:scale(1)}}
 
+  #iris{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0;--r:0%;background:radial-gradient(circle at 50% 42%,rgba(0,0,0,0) 0,rgba(0,0,0,0) var(--r),rgba(4,2,8,.97) calc(var(--r) + 16%))}
+  #skip{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + var(--u)*8);z-index:5;pointer-events:none;text-align:center;color:rgba(255,255,255,.75);font-size:calc(var(--u)*3.6);font-weight:700;text-shadow:0 1px 4px rgba(0,0,0,.8);display:none}
+  #skip.on{display:block}
+  #soundBtn{position:absolute;right:calc(var(--u)*3);bottom:calc(env(safe-area-inset-bottom) + var(--u)*3);z-index:12;width:calc(var(--u)*9);height:calc(var(--u)*9);border:0;border-radius:50%;background:rgba(255,255,255,.88);box-shadow:0 2px 0 rgba(0,0,0,.25);font-size:calc(var(--u)*4.4);font-weight:900;color:var(--ink);pointer-events:auto}
+  #soundBtn.off{opacity:.5}
   #sflash{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,0) 28%,var(--sc,#ff922b) 100%)}
   #sflash.on{animation:sflash .75s ease-out}
   @keyframes sflash{0%{opacity:1}100%{opacity:0}}
@@ -107,12 +112,14 @@
     <div id="rage"><i style="left:18%"></i><i style="left:42%"></i><i style="left:68%"></i><i style="left:88%"></i><div id="rageFill"></div><span id="rageLab">怒り</span><span id="rageName">平静</span></div>
   </div>
   <div id="tunnel"></div><div id="danger"></div>
-  <div id="sflash"></div><div id="flash"></div>
+  <div id="iris"></div><div id="sflash"></div><div id="flash"></div>
   <div id="clock"><div id="clockZone"></div><div id="clockFill"></div></div>
   <div id="clockLab"><span class="ph">黄色いところで</span><span class="ph">離すと紙一重</span></div>
   <div id="mini"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="pops"></div><div id="popsStage"></div>
   <div id="who"><span id="whoName"></span></div>
+  <div id="skip">タップでスキップ</div>
+  <button class="ibtn" id="soundBtn" title="音の入り切り">♪</button>
   <div id="hint"><span class="ph">押している間だけ</span><span class="ph">顔を出す</span><br><span class="ph">ハンマーが来る前に</span><span class="ph">離せ</span></div>
 
   <div class="screen on" id="titleScr">
@@ -120,6 +127,10 @@
     <p><span class="ph">モグラ叩きを、</span><span class="ph">モグラ側で。</span><br><span class="ph">ギリギリで引っ込んで、</span><span class="ph">人間をムキにさせろ。</span></p>
     <p class="nw">自己ベスト <b id="titleBest">0</b> 点</p>
     <button class="btn" id="startBtn">はじめる</button>
+  </div>
+  <div class="screen" id="pauseScr">
+    <h2>一時停止</h2>
+    <button class="btn" id="resumeBtn">つづける</button>
   </div>
   <div class="screen" id="overScr">
     <h2 id="overTitle">逃げきり！</h2>
@@ -130,6 +141,7 @@
     <p class="nw" id="overStat"></p>
     <p class="nw" id="overBest"></p>
     <button class="btn" id="againBtn">もう一回</button>
+    <button class="sbtn" id="shareBtn">Xで共有</button>
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>

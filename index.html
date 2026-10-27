@@ -42,6 +42,11 @@
   #scoreBox.bump{animation:bump .3s ease-out}
   @keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.2)}100%{transform:scale(1)}}
 
+  #iris{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0;--r:0%;background:radial-gradient(circle at 50% 42%,rgba(0,0,0,0) 0,rgba(0,0,0,0) var(--r),rgba(4,2,8,.97) calc(var(--r) + 16%))}
+  #skip{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + var(--u)*8);z-index:5;pointer-events:none;text-align:center;color:rgba(255,255,255,.75);font-size:calc(var(--u)*3.6);font-weight:700;text-shadow:0 1px 4px rgba(0,0,0,.8);display:none}
+  #skip.on{display:block}
+  #soundBtn{position:absolute;right:calc(var(--u)*3);bottom:calc(env(safe-area-inset-bottom) + var(--u)*3);z-index:12;width:calc(var(--u)*9);height:calc(var(--u)*9);border:0;border-radius:50%;background:rgba(255,255,255,.88);box-shadow:0 2px 0 rgba(0,0,0,.25);font-size:calc(var(--u)*4.4);font-weight:900;color:var(--ink);pointer-events:auto}
+  #soundBtn.off{opacity:.5}
   #sflash{position:absolute;inset:0;z-index:4;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,0) 28%,var(--sc,#ff922b) 100%)}
   #sflash.on{animation:sflash .75s ease-out}
   @keyframes sflash{0%{opacity:1}100%{opacity:0}}
@@ -107,12 +112,14 @@
     <div id="rage"><i style="left:18%"></i><i style="left:42%"></i><i style="left:68%"></i><i style="left:88%"></i><div id="rageFill"></div><span id="rageLab">怒り</span><span id="rageName">平静</span></div>
   </div>
   <div id="tunnel"></div><div id="danger"></div>
-  <div id="sflash"></div><div id="flash"></div>
+  <div id="iris"></div><div id="sflash"></div><div id="flash"></div>
   <div id="clock"><div id="clockZone"></div><div id="clockFill"></div></div>
   <div id="clockLab"><span class="ph">黄色いところで</span><span class="ph">離すと紙一重</span></div>
   <div id="mini"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="pops"></div><div id="popsStage"></div>
   <div id="who"><span id="whoName"></span></div>
+  <div id="skip">タップでスキップ</div>
+  <button class="ibtn" id="soundBtn" title="音の入り切り">♪</button>
   <div id="hint"><span class="ph">押している間だけ</span><span class="ph">顔を出す</span><br><span class="ph">ハンマーが来る前に</span><span class="ph">離せ</span></div>
 
   <div class="screen on" id="titleScr">
@@ -120,6 +127,10 @@
     <p><span class="ph">モグラ叩きを、</span><span class="ph">モグラ側で。</span><br><span class="ph">ギリギリで引っ込んで、</span><span class="ph">人間をムキにさせろ。</span></p>
     <p class="nw">自己ベスト <b id="titleBest">0</b> 点</p>
     <button class="btn" id="startBtn">はじめる</button>
+  </div>
+  <div class="screen" id="pauseScr">
+    <h2>一時停止</h2>
+    <button class="btn" id="resumeBtn">つづける</button>
   </div>
   <div class="screen" id="overScr">
     <h2 id="overTitle">逃げきり！</h2>
@@ -130,6 +141,7 @@
     <p class="nw" id="overStat"></p>
     <p class="nw" id="overBest"></p>
     <button class="btn" id="againBtn">もう一回</button>
+    <button class="sbtn" id="shareBtn">Xで共有</button>
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -193,6 +205,8 @@ const CFG = {
   },
   // カメラ：モグラの目の高さ。台の手前の端から奥の人間を見上げる／少し見下ろす
   cam: { pos: [0, 6.0, 7.2], look: [0, 2.4, -1.6], hfov: 48 },
+  // X 共有（url は公開先。空ならいま開いているページ）
+  share: { hashtag: '叩かれないモグラ', url: 'https://fish-suika.github.io/mole-tease/' },
   // タイミングバー（振りかぶりの間だけ出る補助）。zoneFrom＝ここから先で離すと「ギリギリ」（ギリギリ度の下限）、assist＝false で非表示
   assist: { bar: false, zoneNear: 0.35 },
   // モグラが出ている間は一人称視点：カメラがモグラの目の位置へ降りる（引っ込むと元の俯瞰）。amt＝0 で無効
@@ -201,6 +215,8 @@ const CFG = {
 };
 // ===== 判定・点数・人間の動き（three.js を使わない純粋ロジック） =====
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
 
 // 穴 i（0〜8）の台上の位置。行 0＝奥、行 2＝手前
 function holePos(i, CFG) {
@@ -391,9 +407,46 @@ function stepGame(g, dt, press, CFG) {
   else if (g.t >= CFG.duration) { g.over = true; g.reason = 'escaped'; ev.push({ type: 'end', reason: g.reason }); }
   return ev;
 }
+
+// ---- 演出の時間割（開始・退場）。three.js なしで決める ----
+const INTRO_DUR = 3.2, OUTRO_DUR = 2.8;
+
+// 開始：暗い地下から穴をのぞく → 人間が左から歩いてくる → コインを入れる → ハンマーを構えてにらむ
+function introState(t) {
+  const walkU = clamp((t - 0.3) / 1.4, 0, 1);
+  return {
+    x: -9 * (1 - easeOut(walkU)), walking: t >= 0.3 && t < 1.7,
+    moleH: easeOut(clamp(t / 0.9, 0, 1)) * 0.9,          // モグラがそっと顔を出す
+    camU: easeOut(clamp(t / 1.0, 0, 1)),                   // カメラが地下から目の高さへ上がる
+    irisU: easeOut(clamp(t / 1.1, 0, 1)),                  // 穴の光が広がる
+    coinU: t >= 1.7 && t < 2.3 ? (t - 1.7) / 0.6 : -1,     // コインが飛ぶ（-1＝飛んでいない）
+    hoverU: easeOut(clamp((t - 2.1) / 0.5, 0, 1)),         // ハンマーを穴の上に構える
+    mood: t < 2.1 ? 'calm' : 'aim',
+  };
+}
+
+// 退場：逃げきり＝ハンマーを台に置いて、肩を落としてとぼとぼ去る（全員共通）／叩かれて終わり＝ガッツポーズして満足げに去る
+function outroState(t, reason) {
+  const esc = reason === 'escaped', leaveFrom = esc ? 1.3 : 1.0, walkU = clamp((t - leaveFrom) / 1.5, 0, 1);
+  return {
+    x: 9 * walkU * walkU, walking: walkU > 0 && walkU < 1,
+    downU: esc ? easeOut(clamp(t / 0.7, 0, 1)) : 0,                                     // ハンマーを台に置く
+    slumpU: esc ? easeOut(clamp((t - 0.6) / 0.6, 0, 1)) : 0,                            // 肩を落とす
+    fistU: esc ? 0 : easeOut(clamp(t / 0.25, 0, 1)) * (1 - clamp((t - 0.8) / 0.3, 0, 1)),   // ガッツポーズ
+    mood: esc ? (t < 0.6 ? 'calm' : 'sad') : 'happy',
+    moleH: esc ? easeOut(clamp((t - 0.5) / 0.4, 0, 1)) : null,                          // 逃げきったモグラがぴょこっと出る
+  };
+}
+
+// ---- X 共有 ----
+// res＝{ name, score, maxStage, reason }
+function shareText(res, cfg) {
+  const line = res.maxStage > 0 ? res.name + 'を「' + cfg.stages[res.maxStage].name + '」まで怒らせた！' : res.name + 'に挑戦！';
+  return '叩かれないモグラ：' + line + ' ' + res.score + '点' + (res.reason === 'escaped' ? '（逃げきり）' : '') + ' #' + cfg.share.hashtag;
+}
+// PC 用：X の投稿画面を開く URL
+function tweetUrl(text, url) { return 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + (url ? '&url=' + encodeURIComponent(url) : ''); }
 // ===== 3D の世界：モグラ叩き台・モグラ・人間・ハンマー =====
-const lerp = (a, b, t) => a + (b - a) * t;
-const easeOut = t => 1 - Math.pow(1 - t, 3);
 
 function lm(color, extra) { return new THREE.MeshLambertMaterial(Object.assign({ color }, extra)); }
 
@@ -519,7 +572,7 @@ function buildHuman(id) {
   const handR2 = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), skin), armR2 = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12), shirt);   // 2本目のハンマーを持つ手（錯乱）
   armR2.visible = handR2.visible = false;
   g.add(armR, armL, handR, handL, armR2, handR2);
-  g.userData = { id, head, pupils, brows, smile, open, steam, armR, armL, handR, handL, armR2, handR2, skin, cheek, baseSkin: new THREE.Color(L.skin) };
+  g.userData = { id, head, body, eyes, pupils, brows, smile, open, steam, armR, armL, handR, handL, armR2, handR2, skin, cheek, baseSkin: new THREE.Color(L.skin) };
   body.scale.setScalar(L.scale); g.userData.hs = L.scale;
   return g;
 }
@@ -551,6 +604,7 @@ function createWorld(scene) {
   for (const id of ['kid', 'uncle', 'granny']) { const h = buildHuman(id); h.position.set(0, 0, -5.3); h.visible = false; scene.add(h); W.humans[id] = h; }
   W.hammer = buildHammer(); scene.add(W.hammer);
   W.hammer2 = buildHammer(); W.hammer2.visible = false; scene.add(W.hammer2);
+  W.coin = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.08, 20), new THREE.MeshPhongMaterial({ color: 0xffd43b, shininess: 90 })); W.coin.visible = false; scene.add(W.coin);   // 開始のコイン
   const mkShadow = () => { const s = new THREE.Mesh(new THREE.CircleGeometry(1, 28), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false })); s.rotation.x = -Math.PI / 2; s.position.y = 0.03; scene.add(s); return s; };
   W.shadow = mkShadow(); W.shadow2 = mkShadow();
   for (let i = 0; i < 12; i++) {
@@ -560,14 +614,16 @@ function createWorld(scene) {
   return W;
 }
 
-function spawnPuffs(W, x, z, n) {
+// 土ぼこり（star＝true なら黄色い星が上へ弾ける）
+function spawnPuffs(W, x, z, n, star) {
   let k = 0;
   for (const p of W.puffs) {
     if (p.life > 0 || k >= n) continue;
-    const a = Math.random() * Math.PI * 2, sp = 1.2 + Math.random() * 1.6;
-    p.life = 0.5 + Math.random() * 0.25; p.max = p.life;
-    p.vx = Math.cos(a) * sp; p.vz = Math.sin(a) * sp; p.vy = 1.4 + Math.random() * 1.2;
-    p.mesh.position.set(x, 0.2, z); p.mesh.visible = true; k++;
+    const a = Math.random() * Math.PI * 2, sp = (star ? 1.8 : 1.2) + Math.random() * 1.6;
+    p.life = (star ? 0.8 : 0.5) + Math.random() * 0.25; p.max = p.life; p.star = !!star;
+    p.vx = Math.cos(a) * sp; p.vz = Math.sin(a) * sp; p.vy = (star ? 3.2 : 1.4) + Math.random() * 1.4;
+    p.mesh.material.color.setHex(star ? 0xffd43b : 0xf1e3c8);
+    p.mesh.position.set(x, star ? 0.9 : 0.2, z); p.mesh.visible = true; k++;
   }
 }
 
@@ -598,15 +654,19 @@ function reach(U, arm, hand, base, pose, scale, r) {
   stretch(arm, base, grip, r); hand.position.copy(grip);
 }
 
-// ゲームの状態を 3D に反映する
-function updateWorld(W, g, dt, now) {
+// ゲームの状態を 3D に反映する。X＝{ mode: 'play' | 'intro' | 'outro', t, reason }（演出中は人間・ハンマー・モグラをこちらの時間割で動かす）
+function updateWorld(W, g, dt, now, X) {
+  X = X || { mode: 'play', t: 0, reason: '' };
   const m = g.mole, hu = g.human, S = CFG.stages[g.stage];
+  const ist = X.mode === 'intro' ? introState(X.t) : null, ost = X.mode === 'outro' ? outroState(X.t, X.reason) : null, scripted = !!(ist || ost);
+  const escaped = X.reason === 'escaped';
 
   // --- 今回の人だけ見せる ---
   const H = W.humans[g.person.id];
   if (W.human !== H) { if (W.human) W.human.visible = false; W.human = H; H.visible = true; W.key = -1; applyHammerLook(W.hammer, LOOK[g.person.id].hammer); applyHammerLook(W.hammer2, LOOK[g.person.id].hammer); }
   const hsz = LOOK[g.person.id].hammer.size;
   const U = H.userData, hs = U.hs;
+  H.position.x = ist ? ist.x : ost ? ost.x : 0;
 
   // --- モグラ ---
   const mp = holePos(m.hole, CFG);
@@ -616,6 +676,7 @@ function updateWorld(W, g, dt, now) {
   const flat = m.stun > CFG.mole.stunTime - CFG.mole.flatTime;
   mg.scale.set(flat ? 1.25 : 1, flat ? 0.6 : 1, flat ? 1.25 : 1);
   mg.rotation.z = m.stun > 0 ? Math.sin(now * 30) * 0.12 : Math.sin(now * 9) * 0.04 * m.h;
+  if (ost && escaped && ost.moleH > 0.9) { mg.position.y += Math.abs(Math.sin(now * 9)) * 0.35; mg.rotation.z = Math.sin(now * 12) * 0.2; }   // 逃げきったモグラが跳ねて喜ぶ
   const stars = mg.userData.stars;
   stars.visible = m.stun > 0; stars.rotation.y = now * 9;
   stars.position.y = 1.75 + 0.15 * Math.sin(now * 12);
@@ -628,7 +689,14 @@ function updateWorld(W, g, dt, now) {
   let raised = hammerGoal('raised', tg); const hitP = hammerGoal('strike', tg), hover = hammerGoal('hover', tg);
   if (hu.feint) raised = { x: raised.x, y: lerp(rest.y, raised.y, 0.62), z: raised.z, tilt: lerp(rest.tilt, raised.tilt, 0.62) };   // フェイントは上げきらない（見分けるヒント）
   let pose;
-  if (hu.phase === 'windup') {
+  if (ist) {                                                           // 開始：ハンマーを持って歩いてきて、穴の上に構える
+    const carry = Object.assign({}, rest, { x: rest.x + ist.x });
+    pose = mixPose(carry, hammerGoal('hover', 4), ist.hoverU);
+  } else if (ost) {                                                    // 退場：台に置く／ガッツポーズ／持って去る
+    const carry = Object.assign({}, rest, { x: rest.x + ost.x });
+    if (escaped) pose = mixPose(carry, { x: 1.8, y: 0.38, z: -0.9, tilt: 1.45 }, ost.downU);
+    else pose = mixPose(carry, { x: 2.0 + ost.x, y: 4.4, z: -3.4, tilt: -0.25 }, ost.fistU);
+  } else if (hu.phase === 'windup') {
     const u = clamp(hu.t / hu.dur, 0, 1);
     pose = mixPose(W.from, raised, easeOut(clamp(u / 0.7, 0, 1)));
     if (u > 0.7) { pose.x += Math.sin(now * 55) * 0.06 * (u - 0.7) / 0.3; pose.y += Math.sin(now * 40) * 0.05; }
@@ -641,22 +709,23 @@ function updateWorld(W, g, dt, now) {
     pose.y += Math.sin(now * 9) * 0.06;
   } else if (hu.phase === 'recover') {
     const u = clamp(hu.t / hu.recover, 0, 1);
-    if (hu.mood === 'happy' || hu.mood === 'miss' || hu.mood === 'confuse') pose = mixPose(hitP, rest, easeOut(clamp((u - 0.35) / 0.65, 0, 1)));
-    if (hu.mood === 'miss' && U.id === 'kid') pose.y += Math.abs(Math.sin(hu.t * 17)) * 0.5 * (1 - u) * (u < 0.6 ? 1 : 0);   // 悔しくてハンマーを台にトントン（立ち直りの時間の中だけ）
-    else if (hu.mood === 'feint') {   // 途中まで振り下ろして空中でぴたっと止め、にやり。そのあと引く（「わざと」と分かる動き）
+    if (hu.mood === 'feint') {   // 途中まで振り下ろして空中でぴたっと止め、にやり。そのあと引く（「わざと」と分かる動き）
       const fake = mixPose(W.from, hitP, 0.28);
       pose = u < 0.3 ? mixPose(W.from, fake, Math.sqrt(u / 0.3)) : u < 0.65 ? { x: fake.x + Math.sin(now * 40) * 0.05, y: fake.y + Math.sin(now * 34) * 0.04, z: fake.z, tilt: fake.tilt } : mixPose(fake, rest, easeOut((u - 0.65) / 0.35));
+    } else if (hu.mood === 'happy' || hu.mood === 'miss' || hu.mood === 'confuse') {   // 叩いた位置でしばらく止めてから戻す
+      pose = mixPose(hitP, rest, easeOut(clamp((u - 0.35) / 0.65, 0, 1)));
+      if (hu.mood === 'miss' && U.id === 'kid') pose.y += Math.abs(Math.sin(hu.t * 17)) * 0.5 * (1 - u) * (u < 0.6 ? 1 : 0);   // 悔しくてハンマーを台にトントン（立ち直りの時間の中だけ）
     } else pose = mixPose(W.from, rest, easeOut(u));
   } else {
     pose = mixPose(W.pose, rest, 1 - Math.exp(-dt * 7));
   }
   W.pose = pose;
-  W.scaleS = lerp(W.scaleS || 1, hu.phase === 'windup' || hu.phase === 'strike' ? CFG.stages[hu.stage].scale : S.scale, 1 - Math.exp(-dt * 9));
+  W.scaleS = lerp(W.scaleS || 1, !scripted && (hu.phase === 'windup' || hu.phase === 'strike') ? CFG.stages[hu.stage].scale : S.scale, 1 - Math.exp(-dt * 9));
   const sc = W.scaleS * hsz;   // 段階の大きさ × 人ごとのハンマーの大きさ
   const hm = W.hammer; hm.scale.setScalar(sc); hm.position.set(pose.x, pose.y, pose.z); hm.rotation.x = pose.tilt;
 
   // --- ハンマー（2本目：錯乱） ---
-  const two = hu.target2 >= 0 && (hu.phase === 'windup' || hu.phase === 'strike' || hu.phase === 'recover');
+  const two = !scripted && hu.target2 >= 0 && (hu.phase === 'windup' || hu.phase === 'strike' || hu.phase === 'recover');
   W.hammer2.visible = two; U.armR2.visible = U.handR2.visible = two;
   let pose2 = null;
   if (two) {
@@ -665,7 +734,7 @@ function updateWorld(W, g, dt, now) {
   }
 
   // 影と縁（予告）
-  const warn = hu.phase === 'windup' || hu.phase === 'strike';
+  const warn = !scripted && (hu.phase === 'windup' || hu.phase === 'strike');
   for (let i = 0; i < 9; i++) {
     const hot = warn && (i === hu.target || i === hu.target2) && !hu.feint;
     W.rims[i].material.color.setHex(hot ? (Math.floor(now * 14) % 2 ? 0xff3b30 : 0xffd43b) : 0xffd43b);
@@ -678,10 +747,20 @@ function updateWorld(W, g, dt, now) {
   shade(W.shadow, hu.target, warn, wu, sc);
   shade(W.shadow2, hu.target2, warn && hu.target2 >= 0, wu, CFG.stages[hu.stage].scale * hsz);
 
+  // --- コイン（開始：人間が台にコインを入れる） ---
+  const coin = W.coin;
+  if (ist && ist.coinU >= 0) {
+    const u = ist.coinU;
+    coin.visible = true; coin.position.set(lerp(1.6, 0.9, u), lerp(2.6, 0.18, u) + Math.sin(Math.PI * u) * 1.6, lerp(-4.2, -3.0, u)); coin.rotation.x = now * 16; coin.rotation.z = now * 5;
+  } else coin.visible = false;
+
   // --- 人間（腕・表情・怒り） ---
   const humanPos = H.position;
   const shR = _v2.set(humanPos.x + 1.65 * hs, 2.8 * hs, humanPos.z + 0.1 * hs);
-  reach(U, U.armR, U.handR, shR, pose, sc, 0.3);
+  if (ost && escaped && ost.downU >= 0.99) {                                      // ハンマーを置いたあと、手をだらんと下げる
+    const hang = _v1.set(humanPos.x + 1.9 * hs, 1.0 * hs, humanPos.z + 0.7);
+    stretch(U.armR, shR, hang, 0.3); U.handR.position.copy(hang);
+  } else reach(U, U.armR, U.handR, shR, pose, sc, 0.3);
   U.armR.position.sub(humanPos); U.handR.position.sub(humanPos);
   if (two) {
     const shR2 = _v3.set(humanPos.x - 1.65 * hs, 2.8 * hs, humanPos.z + 0.1 * hs);
@@ -689,6 +768,8 @@ function updateWorld(W, g, dt, now) {
     U.armR2.position.sub(humanPos); U.handR2.position.sub(humanPos);
   }
   const shL = _v4.set(-1.65 * hs, 2.8 * hs, 0.1 * hs), handLp = new THREE.Vector3(-2.0, 0.6, 1.5);
+  if (ost && !escaped && ost.fistU > 0.05) handLp.set(-2.4, 3.6 * hs, 0.8);        // 叩かれて終わり：左手も突き上げる
+  if (ost && escaped && ost.slumpU > 0.3) handLp.set(-1.9, 0.9, 0.7);              // 逃げきり：左手もだらん
   stretch(U.armL, shL, handLp, 0.3); U.handL.position.copy(handLp);
   if (two) { U.armL.visible = U.handL.visible = false; } else { U.armL.visible = U.handL.visible = true; }
 
@@ -698,50 +779,152 @@ function updateWorld(W, g, dt, now) {
 
   // 表情（文字なし。顔と動きだけ）
   const sg = g.stage;
-  let mood = hu.mood; if (mood === 'calm' && sg >= 3) mood = 'rage';
-  U.smile.visible = mood === 'calm' || mood === 'aim' || mood === 'happy' || mood === 'feint';
+  let mood = ist ? ist.mood : ost ? ost.mood : hu.mood; if (mood === 'calm' && sg >= 3 && !scripted) mood = 'rage';
+  const blink = (now % 3.1) < 0.12, eyeOpen = mood === 'happy' ? 0.12 : blink ? 0.1 : 1;   // まばたき・笑って目を細める
+  U.eyes[0].scale.y = U.eyes[1].scale.y = 1.15 * eyeOpen; U.pupils[0].visible = U.pupils[1].visible = eyeOpen > 0.4;
+  U.smile.visible = mood === 'calm' || mood === 'aim' || mood === 'happy' || mood === 'feint' || mood === 'sad';
+  U.smile.rotation.z = mood === 'sad' ? 0 : Math.PI;                             // しょんぼりは口がへの字
   U.open.visible = mood === 'miss' || mood === 'rage' || mood === 'confuse';
   U.smile.scale.setScalar(mood === 'happy' || mood === 'feint' ? 1.35 : mood === 'aim' ? 0.7 : 1);
-  U.smile.position.y = mood === 'aim' ? -0.42 : -0.28;
-  const browTilt = mood === 'aim' ? 0.45 + sg * 0.06 : mood === 'miss' ? (U.id === 'kid' ? 0.55 : -0.35) : mood === 'confuse' ? -0.25 : mood === 'happy' ? -0.15 : mood === 'rage' ? 0.6 : mood === 'feint' ? 0.3 : sg * 0.08;
+  U.smile.position.y = mood === 'aim' ? -0.42 : mood === 'sad' ? -0.5 : -0.28;
+  const browTilt = mood === 'aim' ? 0.45 + sg * 0.06 : mood === 'miss' ? (U.id === 'kid' ? 0.55 : -0.35) : mood === 'confuse' ? -0.25 : mood === 'happy' ? -0.15 : mood === 'sad' ? -0.5 : mood === 'rage' ? 0.6 : mood === 'feint' ? 0.3 : sg * 0.08;
   U.brows[0].rotation.z = -browTilt; U.brows[1].rotation.z = browTilt;
   U.brows[0].position.y = U.brows[1].position.y = mood === 'miss' ? 0.72 : 0.58;
-  const gz = hu.target >= 0 && (hu.phase === 'windup' || hu.phase === 'strike') ? holePos(hu.target, CFG) : { x: 0, z: 0 };
-  const swirl = sg >= 4 ? Math.sin(now * 22) * 0.1 : 0;
+  const gz = ist && ist.hoverU > 0.3 ? holePos(4, CFG) : !scripted && hu.target >= 0 && (hu.phase === 'windup' || hu.phase === 'strike') ? holePos(hu.target, CFG) : { x: 0, z: 0 };
+  const swirl = sg >= 4 && !scripted ? Math.sin(now * 22) * 0.1 : 0;
   const away = mood === 'confuse' ? 0.1 : 0;
   U.pupils[0].position.x = -0.46 + away + clamp(gz.x * 0.06, -0.1, 0.1) + swirl; U.pupils[1].position.x = 0.46 + away + clamp(gz.x * 0.06, -0.1, 0.1) + swirl;
-  U.pupils[0].position.y = U.pupils[1].position.y = 0.14 - (warn ? 0.07 : 0) + (sg >= 4 ? Math.cos(now * 22) * 0.08 : 0);
+  U.pupils[0].position.y = U.pupils[1].position.y = 0.14 - (warn || (ist && ist.hoverU > 0.3) ? 0.07 : 0) - (mood === 'sad' ? 0.07 : 0) + (sg >= 4 && !scripted ? Math.cos(now * 22) * 0.08 : 0);
   // 体の動き：振りかぶりで反る、空振りで首をふる、当てたら弾む、フェイントで肩をゆらす、激怒で台をバンバン
-  let lean = 0, shake = 0, bob = 0;
-  if (hu.phase === 'windup') lean = -0.12 * clamp(hu.t / hu.dur, 0, 1);
-  else if (hu.phase === 'strike') lean = 0.2;
-  else if (hu.phase === 'recover' && hu.mood === 'miss') { shake = Math.sin(hu.t * 28) * 0.18 * (1 - hu.t / hu.recover); if (U.id === 'kid') { bob = Math.abs(Math.sin(hu.t * 16)) * 0.5 * (1 - hu.t / hu.recover); shake *= 1.8; } }   // 子どもは地団駄
-  else if (hu.phase === 'recover' && hu.mood === 'happy') bob = Math.abs(Math.sin(hu.t * 12)) * 0.25;
-  else if (hu.phase === 'recover' && hu.mood === 'feint') bob = Math.abs(Math.sin(hu.t * 16)) * 0.12;
-  if (sg >= 3 && hu.phase === 'idle') bob += Math.abs(Math.sin(now * 14)) * 0.14;
-  if (U.id === 'kid' && (hu.phase === 'idle' || hu.phase === 'recover' && hu.mood !== 'happy')) { bob += Math.abs(Math.sin(now * 11)) * 0.22; shake += Math.sin(now * 7) * 0.16; }   // せっかち：じっとしていない
-  if (sg >= 4) shake += Math.sin(now * 40) * 0.08;
+  let lean = 0, shake = 0, bob = 0, slump = 0, nod = 0;
+  if (ist) { if (ist.walking) { bob = Math.abs(Math.sin(X.t * 10)) * 0.22; shake = Math.sin(X.t * 5) * 0.1; } if (ist.hoverU > 0.3) lean = -0.06; }
+  else if (ost) {
+    slump = ost.slumpU;
+    if (ost.walking) bob = escaped ? Math.abs(Math.sin(X.t * 6)) * 0.1 : Math.abs(Math.sin(X.t * 9)) * 0.3;     // とぼとぼ／はずんで
+    if (!escaped) { bob += ost.fistU * Math.abs(Math.sin(X.t * 14)) * 0.5; nod = -0.15; }                       // ガッツポーズは胸をはって跳ねる
+  } else {
+    if (hu.phase === 'windup') lean = -0.12 * clamp(hu.t / hu.dur, 0, 1);
+    else if (hu.phase === 'strike') lean = 0.2;
+    else if (hu.phase === 'recover' && hu.mood === 'miss') { shake = Math.sin(hu.t * 28) * 0.18 * (1 - hu.t / hu.recover); if (U.id === 'kid') { bob = Math.abs(Math.sin(hu.t * 16)) * 0.5 * (1 - hu.t / hu.recover); shake *= 1.8; } }   // 子どもは地団駄
+    else if (hu.phase === 'recover' && hu.mood === 'happy') bob = Math.abs(Math.sin(hu.t * 12)) * 0.25;
+    else if (hu.phase === 'recover' && hu.mood === 'feint') bob = Math.abs(Math.sin(hu.t * 16)) * 0.12;
+    if (sg >= 3 && hu.phase === 'idle') bob += Math.abs(Math.sin(now * 14)) * 0.14;
+    if (U.id === 'kid' && (hu.phase === 'idle' || hu.phase === 'recover' && hu.mood !== 'happy')) { bob += Math.abs(Math.sin(now * 11)) * 0.22; shake += Math.sin(now * 7) * 0.16; }   // せっかち：じっとしていない
+    if (sg >= 4) shake += Math.sin(now * 40) * 0.08;
+  }
   U.head.rotation.z = mood === 'confuse' ? 0.3 : mood === 'feint' ? Math.sin(now * 9) * 0.14 : 0;   // ぽかんと首をかしげる／にやりとゆらす
   W.pulse = Math.max(0, (W.pulse || 0) - dt * 2.2);   // 段階が上がった瞬間にぷくっと膨らんで震える
   shake += Math.sin(now * 60) * 0.16 * W.pulse;
   U.head.scale.setScalar(1 + 0.32 * W.pulse);
-  U.head.rotation.x = lean * 0.6; U.head.rotation.y = shake; U.head.position.y = 4.2 + bob;
+  U.head.rotation.x = lean * 0.6 + 0.45 * slump + nod; U.head.rotation.y = shake; U.head.position.y = 4.2 + bob - 0.3 * slump;   // 肩を落として首をたれる
+  U.body.rotation.x = 0.2 * slump;
   // 湯気
-  U.steam.visible = sg >= 3;
+  U.steam.visible = sg >= 3 && !scripted;
   if (U.steam.visible) U.steam.children.forEach(p => { const { s, k } = p.userData, ph = (now * 1.4 + k * 0.5) % 1; p.position.set(s * (1.3 + ph * 0.3), 0.2 + ph * 1.6, 0.3); p.scale.setScalar(0.5 + ph * 0.9); p.material.opacity = 0.7 * (1 - ph); });
 
-  // --- 土ぼこり ---
+  // --- 土ぼこり・星 ---
   for (const p of W.puffs) {
     if (p.life <= 0) continue;
     p.life -= dt;
     if (p.life <= 0) { p.mesh.visible = false; continue; }
     const t = 1 - p.life / p.max;
     p.mesh.position.x += p.vx * dt; p.mesh.position.z += p.vz * dt; p.vy -= 5 * dt; p.mesh.position.y = Math.max(0.1, p.mesh.position.y + p.vy * dt);
-    p.mesh.scale.setScalar(0.6 + t * 1.4); p.mesh.material.opacity = 0.75 * (1 - t);
+    p.mesh.scale.setScalar(p.star ? 0.5 * (1 - t * 0.6) : 0.6 + t * 1.4); p.mesh.material.opacity = (p.star ? 1 : 0.75) * (1 - t);
+    if (p.star) p.mesh.rotation.y += dt * 12;
   }
 }
+// ===== 効果音（Web Audio で合成。音源ファイルなし。人の声は使わない） =====
+// 使えない環境・まだ操作がない状態では何もしない（遊びは止まらない）
+const SFX = (function () {
+  let ctx = null, master = null, noiseBuf = null, muted = false;
+  try { muted = localStorage.getItem('mole-tease-mute') === '1'; } catch (e) { }
+
+  // iPhone は Web Audio だけだとサイレントスイッチで消音される。無音の <audio> を回しておくと「メディア再生」扱いになり、スイッチに関係なく鳴る
+  let keep = null;
+  function startKeepAlive() {
+    try {
+      const n = 4000, b = new Uint8Array(44 + n), v = new DataView(b.buffer);   // 8kHz・8bit・モノラルの無音 WAV
+      const w = (o, s) => { for (let i = 0; i < s.length; i++) b[o + i] = s.charCodeAt(i); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+      b.fill(128, 44);
+      keep = document.createElement('audio');
+      keep.src = URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+      keep.loop = true; keep.setAttribute('playsinline', '');
+      const p = keep.play(); if (p && p.catch) p.catch(() => { keep = null; });
+    } catch (e) { keep = null; }
+  }
+  function unlock() {                         // 操作のたびに呼ぶ（iPhone などは操作の中でしか音を出せない）
+    try {
+      if (!ctx) {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        master = ctx.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(ctx.destination);
+        noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1.5, ctx.sampleRate);
+        const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      }
+      if (ctx.state !== 'running') {
+        ctx.resume();
+        const s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0);   // 無音を鳴らして有効化する
+      }
+      if (!keep) startKeepAlive(); else if (keep.paused) { const p = keep.play(); if (p && p.catch) p.catch(() => { }); }
+    } catch (e) { ctx = null; }
+  }
+  function setMuted(m) {
+    muted = m; try { localStorage.setItem('mole-tease-mute', m ? '1' : '0'); } catch (e) { }
+    if (master) master.gain.value = m ? 0 : 0.8;
+  }
+  const ok = () => ctx && ctx.state === 'running' && !muted;
+
+  // 雑音：filter の周波数を f0→f1 に動かし、vol で鳴らして dur 秒で消える
+  function noise(type, f0, f1, dur, vol, delay, q) {
+    if (!ok()) return;
+    const t = ctx.currentTime + (delay || 0);
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q || 1;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.02, dur / 3)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(master);
+    s.start(t, Math.random()); s.stop(t + dur + 0.05);
+  }
+  // 音程：f0→f1
+  function tone(type, f0, f1, dur, vol, delay) {
+    if (!ok()) return;
+    const t = ctx.currentTime + (delay || 0);
+    const o = ctx.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  return {
+    unlock, setMuted, isMuted: () => muted,
+    pop() { tone('sine', 200, 520, 0.09, 0.22); noise('lowpass', 900, 300, 0.06, 0.15); },                 // 顔を出す：ぽこっ
+    hide() { tone('sine', 480, 160, 0.08, 0.12); },                                                         // 引っ込む：すっ
+    windup(dur) { noise('bandpass', 300, 1500, dur, 0.18, 0, 1.2); tone('sawtooth', 90, 230, dur, 0.06); },  // 振りかぶり：きしみながら上がる
+    feint() { tone('triangle', 330, 250, 0.35, 0.16); tone('triangle', 330, 250, 0.3, 0.1, 0.18); },      // フェイント：ふふん
+    slam(big) { tone('sine', 170, 42, big ? 0.3 : 0.2, big ? 0.6 : 0.45); noise('lowpass', 1000, 180, 0.16, big ? 0.5 : 0.35); },   // ドン
+    whiff(close) {                                                                                            // 空振り：スカッ（ギリギリほど気持ちいい音）
+      noise('highpass', 2800, 900, 0.12, 0.22, 0.02);
+      if (close >= 0.35) { tone('sine', 880, 1320, 0.22, 0.2, 0.04); tone('triangle', 1320, 1760, 0.26, 0.16, 0.12); }
+      if (close >= 0.7) { tone('sine', 1760, 2350, 0.3, 0.14, 0.2); noise('highpass', 5000, 7000, 0.1, 0.12, 0.05); }
+    },
+    slowmo() { tone('sine', 240, 60, 0.6, 0.3); },                                                          // スロー：低くうなる
+    bump() { tone('square', 700, 1500, 0.08, 0.28); tone('square', 1500, 800, 0.1, 0.22, 0.08); noise('lowpass', 1200, 300, 0.12, 0.3); },   // ピコッ
+    stage(n) { [523, 659, 784, 1047, 1319].slice(0, Math.min(5, n + 1)).forEach((f, i) => tone('square', f, f, 0.11, 0.16, i * 0.06)); tone('sine', 110, 55, 0.4, 0.4); },   // 怒りが上がる
+    cool() { tone('triangle', 520, 260, 0.3, 0.16); },                                                       // 叩かれて怒りがさめる
+    coin() { tone('square', 1568, 1568, 0.06, 0.14); tone('square', 2093, 2093, 0.28, 0.14, 0.07); },     // チャリン
+    step() { noise('lowpass', 420, 160, 0.07, 0.22); },                                                      // 足音
+    rumble() { tone('sine', 70, 45, 0.9, 0.25); noise('lowpass', 250, 80, 0.8, 0.12); },                    // 地下のごろごろ
+    tick() { tone('sine', 1100, 1100, 0.05, 0.12); },                                                        // 残り 10 秒のカチ
+    win() { [523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, f * 1.01, 0.22, 0.2, i * 0.09)); },                         // 逃げきり：ファンファーレ
+    lose() { [392, 330, 262, 196].forEach((f, i) => tone('triangle', f, f * 0.96, 0.28, 0.2, i * 0.15)); },                         // 叩かれて終わり：下降
+    blip() { tone('sine', 660, 990, 0.12, 0.25); },                                                          // 「♪」を押したときの確認音
+  };
+})();
 // ===== 起動・メインループ・入力・ゲームの流れ =====
-// state：title → play → over。play のあいだ、押している穴を stepGame に渡す
+// state：title → intro（地下からのぞく・人間が来る。タップで飛ばせる）→ play → outro（退場）→ over（結果）
 (function boot() {
   const $ = id => document.getElementById(id);
   const stage = $('stage'), view = $('view');
@@ -752,7 +935,7 @@ function updateWorld(W, g, dt, now) {
   const W = createWorld(scene);
   const camera = new THREE.PerspectiveCamera(60, 9 / 16, 0.1, 80);
   const C = CFG.cam;
-  let shakeAmp = 0, peek = 0, camX = 0, tilt = 0, baseFov = 60, hold = 0, kick = 0;   // hold＝ヒットストップ（秒）、kick＝画角のはずみ
+  let shakeAmp = 0, peek = 0, camX = 0, tilt = 0, baseFov = 60, hold = 0, kick = 0, slowT = 0;   // hold＝ヒットストップ（秒）、kick＝画角のはずみ、slowT＝スロー（実時間の秒）
   const holePts = Array.from({ length: 9 }, () => ({ x: 0, y: 0 }));
 
   function fit() {
@@ -781,8 +964,10 @@ function updateWorld(W, g, dt, now) {
   function saveBest() { try { localStorage.setItem(KEY, String(best)); } catch (e) { } }
 
   // ---- 状態 ----
-  let state = 'title', g = newGame(CFG), press = -1, ptr = null, freeze = false, whoTimer = 0;
+  let state = 'title', g = newGame(CFG), press = -1, ptr = null, freeze = false, whoTimer = 0, paused = false;
+  let introT = 0, outroT = 0, prevH = 0, lastTick = -1, stepT = 0, introFlags = {}, lastResult = null;
   const hud = $('hud'), hint = $('hint');
+  const STAGE_COLORS = ['#74c0fc', '#ffd43b', '#ff922b', '#ff6b6b', '#e64980'];
 
   function refreshHud() {
     $('score').textContent = Math.floor(g.score);
@@ -800,34 +985,55 @@ function updateWorld(W, g, dt, now) {
     const d = document.createElement('div'); d.className = 'pop ' + cls; d.innerHTML = html;
     box.appendChild(d); setTimeout(() => d.remove(), 1150);
   }
-  {   // タイミングバーの帯：引っ込むのに掛かる時間を見込んで、ギリギリ度が zoneNear 以上になる離し方〜当たる直前まで
-    const Z = releaseZone(CFG), total = Z.total, from = Z.from, to = Z.to, zone = $('clockZone');
-    zone.style.left = (from / total * 100) + '%'; zone.style.width = ((to - from) / total * 100) + '%';
-  }
   function show(id, on) { $(id).classList.toggle('on', on); }
+  function clearPops() { for (const id of ['pops', 'popsStage']) { const b = $(id); while (b.firstChild) b.firstChild.remove(); } }
 
+  // ---- ゲームの流れ ----
   function startGame(id) {
-    // 人の指定（文字列）は検証用。ふだんは毎回ランダムに 3人から
-    g = newGame(CFG, typeof id === 'string' ? { person: id } : undefined); press = -1; state = 'play';
-    show('titleScr', false); show('overScr', false); hud.classList.add('on');
+    // 人の指定（文字列）は検証用。ふだんは毎回ランダムに 3人から（タイトルに映っている人が、そのまま来る）
+    const keep = state === 'title' ? g.person : undefined;
+    g = newGame(CFG, typeof id === 'string' ? { person: id } : keep ? { person: keep } : undefined);
+    press = -1; ptr = null; paused = false; show('pauseScr', false);
+    state = 'intro'; introT = 0; introFlags = {}; stepT = 0; prevH = 0; lastTick = -1; slowT = 0; hold = 0;
+    show('titleScr', false); show('overScr', false); hud.classList.remove('on'); hint.classList.remove('on'); $('who').classList.remove('on'); clearPops();
+    peek = 1; camX = holePos(4, CFG).x;       // 地下の穴の中から始まる
+    $('iris').style.opacity = 1; show('skip', true);
+    SFX.unlock(); SFX.rumble();
+    refreshHud();
+  }
+  function beginPlay() {
+    state = 'play'; show('skip', false); $('iris').style.opacity = 0;
+    hud.classList.add('on');
     hint.classList.add('on'); setTimeout(() => hint.classList.remove('on'), 4200);
     $('whoName').textContent = 'あいて：' + g.person.name; $('who').classList.add('on'); clearTimeout(whoTimer); whoTimer = setTimeout(() => $('who').classList.remove('on'), 4200);
+    g.human.wait = 0.7;
     refreshHud();
   }
   function endGame() {
-    state = 'over'; press = -1; hud.classList.remove('on'); hint.classList.remove('on');
+    state = 'outro'; outroT = 0; press = -1; ptr = null; hud.classList.remove('on'); hint.classList.remove('on'); $('who').classList.remove('on'); $('mini').classList.remove('on');
     const score = Math.floor(g.score), isNew = score > best;
     if (isNew) { best = score; saveBest(); }
+    const stName = CFG.stages[g.maxStage].name;
+    lastResult = { name: g.person.name, score, maxStage: g.maxStage, stageName: stName, whiffs: g.whiffs, reason: g.reason, best, isNew };
     $('overTitle').textContent = g.reason === 'escaped' ? '逃げきり！' : '叩かれた…';
     $('overScore').textContent = score;
     $('overNew').classList.toggle('on', isNew);
-    $('overWho').textContent = g.person.name + (g.maxStage > 0 ? 'を「' + CFG.stages[g.maxStage].name + '」まで怒らせた' : 'は最後まで平静だった');
+    $('overWho').textContent = g.person.name + (g.maxStage > 0 ? 'を「' + stName + '」まで怒らせた' : 'は最後まで平静だった');
     $('overStat').textContent = '空振りさせた ' + g.whiffs + ' 回';
     $('overBest').textContent = '自己ベスト ' + best + ' 点';
-    setTimeout(() => show('overScr', true), g.reason === 'escaped' ? 500 : 900);
+    setTimeout(() => (g.reason === 'escaped' ? SFX.win : SFX.lose)(), 350);
   }
   $('startBtn').addEventListener('click', startGame);
   $('againBtn').addEventListener('click', startGame);
+
+  // 一時停止（別のタブ・アプリに移ったとき）
+  function setPaused(p) {
+    if (p === paused) return;
+    paused = p; show('pauseScr', p); if (p) { press = -1; ptr = null; }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') setPaused(true); });
+  addEventListener('blur', () => { ptr = null; press = -1; if (state === 'play') setPaused(true); });
+  $('resumeBtn').addEventListener('click', () => { setPaused(false); last = performance.now(); });
 
   // ---- 入力：押している間だけ顔を出す ----
   function holeAt(e, cur) {
@@ -835,24 +1041,67 @@ function updateWorld(W, g, dt, now) {
     return pickHole(e.clientX - r.left, e.clientY - r.top, holePts, cur, 1.25);
   }
   stage.addEventListener('pointerdown', e => {
-    if (state !== 'play' || ptr !== null || e.target.closest('.screen')) return;
+    if (e.target.closest('.screen') || e.target.closest('.ibtn')) return;
+    if (state === 'intro') { beginPlay(); g.mole.h = 0; return; }       // 開始の演出はタップで飛ばせる
+    if (state !== 'play' || paused || ptr !== null) return;
     ptr = e.pointerId; try { stage.setPointerCapture(e.pointerId); } catch (x) { }
     press = holeAt(e, -1); e.preventDefault();
   });
   stage.addEventListener('pointermove', e => { if (e.pointerId === ptr && state === 'play') press = holeAt(e, press); });
   function release(e) { if (e.pointerId === ptr) { ptr = null; press = -1; } }
   stage.addEventListener('pointerup', release); stage.addEventListener('pointercancel', release);
-  addEventListener('blur', () => { ptr = null; press = -1; });
 
-  // ---- 出来事の見た目 ----
+  // ---- 音（♪ で入り切り。iPhone などは操作のたびに有効化する） ----
+  $('soundBtn').classList.toggle('off', SFX.isMuted());
+  $('soundBtn').addEventListener('click', e => { e.stopPropagation(); SFX.unlock(); SFX.setMuted(!SFX.isMuted()); $('soundBtn').classList.toggle('off', SFX.isMuted()); if (!SFX.isMuted()) setTimeout(SFX.blip, 80); });
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click']) addEventListener(ev, () => SFX.unlock(), { capture: true });
+
+  // ---- X 共有：スマホは画像つき（Web Share API）、PC は X の投稿画面（文章＋URL。画像は自動では付けられない） ----
+  function resultCanvas() {
+    const r = lastResult || { name: '', score: 0, maxStage: 0, stageName: '平静', whiffs: 0, reason: 'escaped', best: 0 };
+    const c = document.createElement('canvas'); c.width = 1080; c.height = 1350;
+    const x = c.getContext('2d'), F = '"Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif';
+    const bg = x.createLinearGradient(0, 0, 0, 1350); bg.addColorStop(0, '#4a2f6b'); bg.addColorStop(1, '#1d1530');
+    x.fillStyle = bg; x.fillRect(0, 0, 1080, 1350);
+    x.fillStyle = 'rgba(255,255,255,.06)'; for (let i = 0; i < 9; i++) { x.beginPath(); x.ellipse(180 + (i % 3) * 360, 1020 + Math.floor(i / 3) * 110, 110, 40, 0, 0, Math.PI * 2); x.fill(); }   // 台の穴
+    x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = '900 72px ' + F; x.fillText('叩かれないモグラ', 540, 180);
+    x.fillStyle = '#c9c0e0'; x.font = '700 48px ' + F; x.fillText(r.reason === 'escaped' ? '60 秒、逃げきった' : '叩かれてしまった…', 540, 260);
+    x.fillStyle = '#ffd43b'; x.font = '900 330px ' + F; x.fillText(String(r.score), 540, 640);
+    x.fillStyle = '#fff'; x.font = '900 72px ' + F; x.fillText('点', 540, 740);
+    x.fillStyle = '#fff'; x.font = '700 54px ' + F; x.fillText(r.name, 540, 860);
+    x.fillStyle = STAGE_COLORS[r.maxStage]; x.font = '900 76px ' + F; x.fillText(r.maxStage > 0 ? '「' + r.stageName + '」まで怒らせた' : '最後まで平静だった', 540, 960);
+    x.fillStyle = '#c9c0e0'; x.font = '700 46px ' + F; x.fillText('空振りさせた ' + r.whiffs + ' 回　自己ベスト ' + r.best + ' 点', 540, 1100);
+    x.fillText('#' + CFG.share.hashtag, 540, 1250);
+    return c;
+  }
+  async function share() {
+    if (!lastResult) return;
+    const url = CFG.share.url || (/^https?:/.test(location.href) ? location.href.split('#')[0] : '');
+    const text = shareText(lastResult, CFG);
+    if (matchMedia('(pointer: coarse)').matches && navigator.share && navigator.canShare) {
+      try {
+        const blob = await new Promise(r => resultCanvas().toBlob(r, 'image/png'));
+        const file = new File([blob], 'mole-tease.png', { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text: text + (url ? ' ' + url : '') }); return; }
+      } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    window.open(tweetUrl(text, url), '_blank', 'noopener');
+  }
+  $('shareBtn').addEventListener('click', share);
+
+  // ---- 出来事の見た目と音 ----
   function onEvents(evs) {
     for (const e of evs) {
-      if (e.type === 'impact') {
+      if (e.type === 'windup') SFX.windup(e.dur);
+      else if (e.type === 'feint') SFX.feint();
+      else if (e.type === 'impact') {
         shakeAmp = Math.max(shakeAmp, e.hit ? 0.5 : 0.18);
+        SFX.slam(g.stage >= 3);
         if (e.hit) { const f = $('flash'); f.classList.remove('on'); void f.offsetWidth; f.classList.add('on'); }
-        const p = holePos(e.hole, CFG); spawnPuffs(W, p.x, p.z, e.hit ? 8 : 6);
+        const p = holePos(e.hole, CFG); spawnPuffs(W, p.x, p.z, e.hit ? 8 : 6); if (e.hit) spawnPuffs(W, p.x, p.z, 7, true);   // 叩かれたら黄色い星が弾ける
       } else if (e.type === 'whiff') {
-        if (e.close >= 0.7) pop(e.label + '<small>+' + e.pts + '</small>', 'great');
+        SFX.whiff(e.close);
+        if (e.close >= 0.7) { pop(e.label + '<small>+' + e.pts + '</small>', 'great'); slowT = 0.5; kick = Math.max(kick, 0.5); SFX.slowmo(); }   // 紙一重はスロー
         else if (e.close >= 0.35) pop(e.label + '<small>+' + e.pts + '</small>', 'near');
         else pop(e.label + '<small>+' + e.pts + '</small>', 'miss');
         $('scoreBox').classList.remove('bump'); void $('scoreBox').offsetWidth; $('scoreBox').classList.add('bump');
@@ -864,12 +1113,12 @@ function updateWorld(W, g, dt, now) {
         const rn = $('rageName'); rn.classList.remove('bump'); void rn.offsetWidth; rn.classList.add('bump');
         const mb = $('multBox'); mb.classList.remove('bump'); void mb.offsetWidth; mb.classList.add('bump');
         if (e.stage > e.from) {
-          hold = 0.14; kick = 1; shakeAmp = Math.max(shakeAmp, 0.7); W.pulse = 1;
-          const sf = $('sflash'); sf.style.setProperty('--sc', ['#74c0fc', '#ffd43b', '#ff922b', '#ff6b6b', '#e64980'][e.stage]); sf.classList.remove('on'); void sf.offsetWidth; sf.classList.add('on');
+          hold = 0.14; kick = 1; shakeAmp = Math.max(shakeAmp, 0.7); W.pulse = 1; SFX.stage(e.stage);
+          const sf = $('sflash'); sf.style.setProperty('--sc', STAGE_COLORS[e.stage]); sf.classList.remove('on'); void sf.offsetWidth; sf.classList.add('on');
           const nm = CFG.stages[e.stage].name; setTimeout(() => { if (state === 'play') pop(nm + '！', 'rage', 'stage'); }, 650);
-        }
+        } else SFX.cool();
       } else if (e.type === 'bump') {
-        pop('ピコッ！', 'bad');
+        pop('ピコッ！', 'bad'); SFX.bump();
       } else if (e.type === 'end') endGame();
     }
   }
@@ -877,21 +1126,47 @@ function updateWorld(W, g, dt, now) {
   // ---- メインループ ----
   let last = performance.now(), simT = 0;
   function frame(nowMs) {
-    const dt = Math.min(0.05, (nowMs - last) / 1000); last = nowMs; simT += dt;
-    if (state === 'play' && !freeze) { if (hold > 0) hold -= dt; else { onEvents(stepGame(g, dt, press, CFG)); refreshHud(); } }
-    updateWorld(W, g, dt, simT);
-    // 出ている間は一人称：出ている穴の、モグラの目の位置へカメラが降りる（押す位置の判定は俯瞰のカメラ基準のまま）
-    const P = CFG.fps, mp = holePos(g.mole.hole, CFG);
-    peek += ((state === 'play' ? clamp(g.mole.h, 0, 1) * P.amt : 0) - peek) * (1 - Math.exp(-dt * P.rate));
-    camX += (mp.x - camX) * (1 - Math.exp(-dt * P.rate));
-    shakeAmp = Math.max(0, shakeAmp - dt * 1.4);
-    const eyeY = P.eyeBase + P.eyeK * g.mole.h;
+    const real = Math.min(0.05, (nowMs - last) / 1000); last = nowMs;
+    slowT = Math.max(0, slowT - real);
+    const dt = paused ? 0 : real * (slowT > 0 ? 0.3 : 1); simT += dt;    // 紙一重のあとは少しスロー
+
+    if (state === 'play' && !freeze && !paused) {
+      if (hold > 0) hold -= dt; else { onEvents(stepGame(g, dt, press, CFG)); refreshHud(); }
+      // 顔を出す・引っ込む音、残り 10 秒のカチ
+      if (prevH < 0.05 && g.mole.h >= 0.05) SFX.pop(); else if (prevH > 0.3 && g.mole.h <= 0.3) SFX.hide();
+      prevH = g.mole.h;
+      const left = Math.ceil(CFG.duration - g.t); if (left <= 10 && left > 0 && left !== lastTick) { lastTick = left; SFX.tick(); }
+    } else if (state === 'intro') {
+      introT += dt; const ist = introState(introT);
+      g.mole.h = ist.moleH;
+      if (!introFlags.pop && introT > 0.5) { introFlags.pop = true; SFX.pop(); }
+      if (ist.walking) { stepT -= dt; if (stepT <= 0) { stepT = 0.34; SFX.step(); } }
+      if (!introFlags.coin && introT > 1.95) { introFlags.coin = true; SFX.coin(); }
+      $('iris').style.setProperty('--r', (ist.irisU * 100) + '%'); $('iris').style.opacity = 1 - clamp((introT - 1.1) / 0.4, 0, 1);
+      if (introT >= INTRO_DUR) { beginPlay(); }
+    } else if (state === 'outro' || state === 'over') {
+      if (state === 'outro') {
+        outroT += dt; const ost = outroState(outroT, g.reason);
+        if (ost.moleH != null) g.mole.h = ost.moleH;
+        if (ost.walking) { stepT -= dt; if (stepT <= 0) { stepT = g.reason === 'escaped' ? 0.5 : 0.3; SFX.step(); } }
+        if (outroT >= OUTRO_DUR) { state = 'over'; show('overScr', true); }
+      }
+    }
+    const X = state === 'intro' ? { mode: 'intro', t: introT } : (state === 'outro' || state === 'over') ? { mode: 'outro', t: Math.min(outroT, OUTRO_DUR), reason: g.reason } : { mode: 'play', t: 0 };
+    updateWorld(W, g, dt, simT, X);
+
+    // 出ている間は一人称：出ている穴の、モグラの目の位置へカメラが降りる（押す位置の判定は俯瞰のカメラ基準のまま）。開始は地下から上がってくる
+    const P = CFG.fps, mp = holePos(g.mole.hole, CFG), ist2 = state === 'intro' ? introState(introT) : null;
+    peek += ((ist2 ? 1 : state === 'play' ? clamp(g.mole.h, 0, 1) * P.amt : 0) - peek) * (1 - Math.exp(-real * P.rate));
+    camX += (mp.x - camX) * (1 - Math.exp(-real * P.rate));
+    shakeAmp = Math.max(0, shakeAmp - real * 1.4);
+    const eyeY = ist2 ? lerp(-0.95, P.eyeBase + P.eyeK * 0.9, ist2.camU) : P.eyeBase + P.eyeK * g.mole.h;
     const sx = (Math.random() - 0.5) * shakeAmp, sy = (Math.random() - 0.5) * shakeAmp;
-    tilt += ((state === 'play' && (g.human.phase === 'windup' || g.human.phase === 'strike') && g.human.target === g.mole.hole ? 1 : 0) - tilt) * (1 - Math.exp(-dt * P.tiltRate));
-    const pitch = (P.pitch + P.windupPitch * tilt) * Math.PI / 180;
+    tilt += ((state === 'play' && (g.human.phase === 'windup' || g.human.phase === 'strike') && g.human.target === g.mole.hole ? 1 : 0) - tilt) * (1 - Math.exp(-real * P.tiltRate));
+    const pitch = (P.pitch + (ist2 ? (1 - ist2.camU) * 34 : 0) + P.windupPitch * tilt) * Math.PI / 180;
     camera.position.set(lerp(C.pos[0], camX, peek) + sx, lerp(C.pos[1], eyeY, peek) + sy, lerp(C.pos[2], mp.z + P.back, peek));
     camera.lookAt(lerp(C.look[0], camX * P.lookXk, peek), lerp(C.look[1], eyeY + P.lookDist * Math.tan(pitch), peek), lerp(C.look[2], mp.z - P.lookDist, peek));
-    kick = Math.max(0, kick - dt * 3);
+    kick = Math.max(0, kick - real * 3);
     const fov = lerp(baseFov, P.fov, peek) + 9 * kick;
     if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     W.fpsView = peek > P.hideAt;
@@ -909,12 +1184,13 @@ function updateWorld(W, g, dt, now) {
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
+  refreshHud();
   requestAnimationFrame(frame);
 
   // 検証用の窓口（遊ぶのには使わない）
   window.__t = {
     start: startGame, state: () => state, game: () => g, holePts: () => holePts.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
-    setPress: h => { press = h; }, freeze: f => { freeze = f; }, scene, camera, W,
+    setPress: h => { press = h; }, freeze: f => { freeze = f; }, skip: () => { if (state === 'intro') { beginPlay(); g.mole.h = 0; } }, setIntroT: t => { introT = t; }, introT: () => introT, outroT: () => outroT, setOutroT: t => { outroT = t; }, scene, camera, W,
   };
 })();
 </script>

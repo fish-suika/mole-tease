@@ -56,6 +56,8 @@ const CFG = {
   },
   // カメラ：モグラの目の高さ。台の手前の端から奥の人間を見上げる／少し見下ろす
   cam: { pos: [0, 6.0, 7.2], look: [0, 2.4, -1.6], hfov: 48 },
+  // X 共有（url は公開先。空ならいま開いているページ）
+  share: { hashtag: '叩かれないモグラ', url: 'https://fish-suika.github.io/mole-tease/' },
   // タイミングバー（振りかぶりの間だけ出る補助）。zoneFrom＝ここから先で離すと「ギリギリ」（ギリギリ度の下限）、assist＝false で非表示
   assist: { bar: false, zoneNear: 0.35 },
   // モグラが出ている間は一人称視点：カメラがモグラの目の位置へ降りる（引っ込むと元の俯瞰）。amt＝0 で無効

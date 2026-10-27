@@ -78,6 +78,8 @@ const CFG = {
   },
   // カメラ：モグラの目の高さ。台の手前の端から奥の人間を見上げる／少し見下ろす
   cam: { pos: [0, 6.0, 7.2], look: [0, 2.4, -1.6], hfov: 48 },
+  // X 共有（url は公開先。空ならいま開いているページ）
+  share: { hashtag: '叩かれないモグラ', url: 'https://fish-suika.github.io/mole-tease/' },
   // タイミングバー（振りかぶりの間だけ出る補助）。zoneFrom＝ここから先で離すと「ギリギリ」（ギリギリ度の下限）、assist＝false で非表示
   assist: { bar: false, zoneNear: 0.35 },
   // モグラが出ている間は一人称視点：カメラがモグラの目の位置へ降りる（引っ込むと元の俯瞰）。amt＝0 で無効
@@ -86,6 +88,8 @@ const CFG = {
 };
 // ===== 判定・点数・人間の動き（three.js を使わない純粋ロジック） =====
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
 
 // 穴 i（0〜8）の台上の位置。行 0＝奥、行 2＝手前
 function holePos(i, CFG) {
@@ -276,6 +280,45 @@ function stepGame(g, dt, press, CFG) {
   else if (g.t >= CFG.duration) { g.over = true; g.reason = 'escaped'; ev.push({ type: 'end', reason: g.reason }); }
   return ev;
 }
+
+// ---- 演出の時間割（開始・退場）。three.js なしで決める ----
+const INTRO_DUR = 3.2, OUTRO_DUR = 2.8;
+
+// 開始：暗い地下から穴をのぞく → 人間が左から歩いてくる → コインを入れる → ハンマーを構えてにらむ
+function introState(t) {
+  const walkU = clamp((t - 0.3) / 1.4, 0, 1);
+  return {
+    x: -9 * (1 - easeOut(walkU)), walking: t >= 0.3 && t < 1.7,
+    moleH: easeOut(clamp(t / 0.9, 0, 1)) * 0.9,          // モグラがそっと顔を出す
+    camU: easeOut(clamp(t / 1.0, 0, 1)),                   // カメラが地下から目の高さへ上がる
+    irisU: easeOut(clamp(t / 1.1, 0, 1)),                  // 穴の光が広がる
+    coinU: t >= 1.7 && t < 2.3 ? (t - 1.7) / 0.6 : -1,     // コインが飛ぶ（-1＝飛んでいない）
+    hoverU: easeOut(clamp((t - 2.1) / 0.5, 0, 1)),         // ハンマーを穴の上に構える
+    mood: t < 2.1 ? 'calm' : 'aim',
+  };
+}
+
+// 退場：逃げきり＝ハンマーを台に置いて、肩を落としてとぼとぼ去る（全員共通）／叩かれて終わり＝ガッツポーズして満足げに去る
+function outroState(t, reason) {
+  const esc = reason === 'escaped', leaveFrom = esc ? 1.3 : 1.0, walkU = clamp((t - leaveFrom) / 1.5, 0, 1);
+  return {
+    x: 9 * walkU * walkU, walking: walkU > 0 && walkU < 1,
+    downU: esc ? easeOut(clamp(t / 0.7, 0, 1)) : 0,                                     // ハンマーを台に置く
+    slumpU: esc ? easeOut(clamp((t - 0.6) / 0.6, 0, 1)) : 0,                            // 肩を落とす
+    fistU: esc ? 0 : easeOut(clamp(t / 0.25, 0, 1)) * (1 - clamp((t - 0.8) / 0.3, 0, 1)),   // ガッツポーズ
+    mood: esc ? (t < 0.6 ? 'calm' : 'sad') : 'happy',
+    moleH: esc ? easeOut(clamp((t - 0.5) / 0.4, 0, 1)) : null,                          // 逃げきったモグラがぴょこっと出る
+  };
+}
+
+// ---- X 共有 ----
+// res＝{ name, score, maxStage, reason }
+function shareText(res, cfg) {
+  const line = res.maxStage > 0 ? res.name + 'を「' + cfg.stages[res.maxStage].name + '」まで怒らせた！' : res.name + 'に挑戦！';
+  return '叩かれないモグラ：' + line + ' ' + res.score + '点' + (res.reason === 'escaped' ? '（逃げきり）' : '') + ' #' + cfg.share.hashtag;
+}
+// PC 用：X の投稿画面を開く URL
+function tweetUrl(text, url) { return 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + (url ? '&url=' + encodeURIComponent(url) : ''); }
 // ===== 検証（three.js を使わない純粋ロジック） =====
 const $out = document.getElementById('out');
 let nOk = 0, nNg = 0;
@@ -611,6 +654,35 @@ const holdOn = n => () => n;
   check('ギリギリを狙う人ほど、怒りの段階が上がる（誰が相手でも）', ids.every(id => mean(skillT[id].stage) > mean(carefulT[id].stage) + 0.5), ids.map(id => mean(skillT[id].stage).toFixed(1) + ' vs ' + mean(carefulT[id].stage).toFixed(1)).join(' / '));
   check('ギリギリを狙う方が、慎重より点が高い（欲張りが報われる）', ids.every(id => mean(skillT[id].score) > mean(carefulT[id].score) * 1.15), ids.map(id => Math.round(mean(skillT[id].score)) + ' vs ' + Math.round(mean(carefulT[id].score))).join(' / '));
   check('上手な操作なら、誰が相手でも「激怒」以上まで怒らせられる（平均で段階 3 以上）', ids.every(id => mean(skillT[id].stage) >= 3), ids.map(id => mean(skillT[id].stage).toFixed(1)).join(' / '));
+})();
+// ===== Phase 3・4：開始・退場の時間割と X 共有 =====
+(() => {
+  const I0 = introState(0), I1 = introState(INTRO_DUR), Im = introState(1.0);
+  check('開始：人間は画面の外（左）から歩いてきて、最後は中央にいる', I0.x <= -8.9 && near(I1.x, 0, 1e-9) && introState(0.9).x < introState(1.5).x);
+  check('開始：人間は歩いている間だけ walking', introState(0.1).walking === false && introState(1.0).walking === true && introState(2.0).walking === false);
+  check('開始：モグラは地下（0）から顔を出して 0.9 で止まる', I0.moleH === 0 && near(I1.moleH, 0.9, 1e-9) && introState(0.4).moleH > 0 && introState(0.4).moleH < 0.9);
+  check('開始：コインは歩き終わってから飛ぶ（1.7〜2.3 秒）', introState(1.6).coinU === -1 && introState(2.0).coinU > 0 && introState(2.0).coinU < 1 && introState(2.4).coinU === -1);
+  check('開始：コインのあとにハンマーを構えてにらむ（aim）', introState(2.0).mood === 'calm' && introState(2.6).mood === 'aim' && introState(2.0).hoverU === 0 && near(I1.hoverU, 1, 1e-9));
+  check('開始：カメラ・光の広がりは 0→1 に収まる', [0, 0.5, 1.0, 2.0, INTRO_DUR].every(t => { const s = introState(t); return s.camU >= 0 && s.camU <= 1 && s.irisU >= 0 && s.irisU <= 1; }));
+  check('開始：2〜3 秒台（タップで飛ばせる長さ）', INTRO_DUR >= 2 && INTRO_DUR <= 3.5);
+
+  const Oe0 = outroState(0, 'escaped'), Oe = outroState(OUTRO_DUR, 'escaped'), Ob = outroState(OUTRO_DUR, 'bumped');
+  check('退場（逃げきり）：ハンマーを台に置き、肩を落とし、しょんぼりして右へ去る', Oe.downU === 1 && Oe.slumpU === 1 && Oe.mood === 'sad' && Oe.x > 5 && Oe0.x === 0);
+  check('退場（逃げきり）：最初は置く前（calm）、そのあと sad', outroState(0.3, 'escaped').mood === 'calm' && outroState(1.0, 'escaped').mood === 'sad');
+  check('退場（逃げきり）：モグラがぴょこっと出る（0→1）', Oe0.moleH === 0 && near(Oe.moleH, 1, 1e-9));
+  check('退場（叩かれた）：ガッツポーズ（fistU）して満足げ（happy）に去る。ハンマーは置かない', outroState(0.5, 'bumped').fistU > 0.9 && Ob.fistU === 0 && Ob.mood === 'happy' && Ob.downU === 0 && Ob.slumpU === 0 && Ob.x > 5 && Ob.moleH === null);
+  check('退場：去るのは終わりまでに右（x 正）へ。去り始めは逃げきり 1.3 秒・叩かれた 1.0 秒', outroState(1.2, 'escaped').x === 0 && outroState(1.2, 'bumped').x > 0 && outroState(2.0, 'escaped').x < outroState(2.6, 'escaped').x);
+  check('退場：2〜3 秒台', OUTRO_DUR >= 2 && OUTRO_DUR <= 3.5);
+
+  // ---- X 共有の文章 ----
+  const R = { name: '負けず嫌いのおじさん', score: 12345, maxStage: 3, reason: 'escaped' };
+  const tx = shareText(R, CFG);
+  check('共有文：相手・最高段階・点・逃げきり・ハッシュタグが入る', tx.includes('負けず嫌いのおじさん') && tx.includes('「激怒」') && tx.includes('12345点') && tx.includes('逃げきり') && tx.includes('#' + CFG.share.hashtag), tx);
+  check('共有文：叩かれて終わりなら「逃げきり」を付けない', !shareText({ name: '子ども', score: 10, maxStage: 1, reason: 'bumped' }, CFG).includes('逃げきり'));
+  check('共有文：最後まで平静なら「怒らせた」ではなく挑戦', !shareText({ name: '子ども', score: 10, maxStage: 0, reason: 'escaped' }, CFG).includes('怒らせた') && shareText({ name: '子ども', score: 10, maxStage: 0, reason: 'escaped' }, CFG).includes('挑戦'));
+  check('共有：X の投稿画面の URL（文章と URL をエンコード）', (() => { const u = tweetUrl('あ b', 'https://x.test/p?q=1'); return u.startsWith('https://twitter.com/intent/tweet?text=') && u.includes(encodeURIComponent('あ b')) && u.includes('&url=' + encodeURIComponent('https://x.test/p?q=1')); })());
+  check('共有：公開先 URL が設定されている', /^https:\/\/.+\/$/.test(CFG.share.url));
+  check('全段階に名前がある（結果・共有に使う）', CFG.stages.every(s => typeof s.name === 'string' && s.name.length > 0));
 })();
 const sumEl = document.getElementById('sum');
 sumEl.textContent = nNg === 0 ? ('全 ' + nOk + ' 件 PASS') : (nNg + ' 件 FAIL / ' + (nOk + nNg) + ' 件');
