@@ -66,7 +66,7 @@ function windupDur(P, S, CFG) { return Math.max(CFG.human.minWindup, CFG.human.w
 
 function newHuman(CFG, person) {
   // seq＝フェーズが変わるたびに増える（見た目の切り替え用）。target2＝2本目のハンマーの穴（怒り最大のとき）
-  return { person, phase: 'idle', t: 0, seq: 0, wait: CFG.human.firstWait, target: -1, target2: -1, dur: 0, stage: 0, feint: false, strayed: false, recover: 0, mood: 'calm' };
+  return { person, phase: 'idle', t: 0, seq: 0, wait: CFG.human.firstWait, target: -1, target2: -1, dur: 0, stage: 0, feint: false, strayed: false, lastStray: false, recover: 0, mood: 'calm' };
 }
 
 // 振りかぶりを始める。ambush＝待ち伏せからの素早い振りかぶり
@@ -75,12 +75,14 @@ function startWindup(hu, hole, ambush, ctx, CFG) {
   hu.phase = 'windup'; hu.t = 0; hu.seq++; hu.mood = 'aim'; hu.stage = ctx.stage;
   hu.target = hole; hu.strayed = false; hu.feint = false; hu.target2 = -1;
   if (!ambush) {
-    if (P.stray > 0 && ctx.rng() < P.stray) {            // 雑：隣（左右）の穴を狙ってしまう
+    // 雑：ときどき隣（左右）の穴を狙ってしまう。続けては起こさない（バグに見えるので）
+    if (P.stray > 0 && !hu.lastStray && ctx.rng() < P.stray) {
       const c = colOf(hole), opts = []; if (c > 0) opts.push(hole - 1); if (c < 2) opts.push(hole + 1);
       hu.target = opts[Math.min(opts.length - 1, Math.floor(ctx.rng() * opts.length))]; hu.strayed = true;
     }
     hu.feint = ctx.rng() < clamp(P.feint + S.feint, 0, 0.6);
   }
+  hu.lastStray = hu.strayed;
   hu.dur = ambush ? CFG.human.ambushWindup : windupDur(P, S, CFG);
   if (S.hammers >= 2 && !hu.feint) {                       // 2本目：ちがう行のどこか（行を変えるだけでは逃げきれない）
     const r2 = (rowOf(hu.target) + 1 + Math.min(1, Math.floor(ctx.rng() * 2))) % 3;
@@ -121,6 +123,7 @@ function humanStep(hu, dt, m, now, CFG, ctx) {
       ev.push({ type: 'impact', hole: hu.target, hole2: hu.target2, hit, stray, gap, close });
       if (hit) { goPhase(hu, 'recover', 'happy'); hu.recover = Hc.recoverHit; }
       else if (!stray && P.ambush > 0) goPhase(hu, 'ambush', 'aim');
+      else if (stray) { goPhase(hu, 'recover', 'confuse'); hu.recover = Hc.recoverStray; }
       else { goPhase(hu, 'recover', 'miss'); hu.recover = Hc.recoverMiss; }
     }
   } else if (hu.phase === 'recover') {

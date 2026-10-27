@@ -34,7 +34,7 @@
   #multBox.bump{animation:bump .35s ease-out}
   @keyframes glowHue{0%{filter:hue-rotate(0)}100%{filter:hue-rotate(30deg)}}
   #bumpBox{flex:1.1}
-  #who{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + var(--u)*15);z-index:5;pointer-events:none;text-align:center;opacity:0;transition:opacity .4s}
+  #who{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + var(--u)*22);z-index:5;pointer-events:none;text-align:center;opacity:0;transition:opacity .4s}
   #who.on{opacity:1}
   #who span{display:inline-block;padding:calc(var(--u)*1) calc(var(--u)*4);border-radius:calc(var(--u)*4);background:rgba(20,16,24,.7);color:#fff;font-size:calc(var(--u)*4);font-weight:900;white-space:nowrap}
   .lump{display:inline-block;width:calc(var(--u)*5.4);height:calc(var(--u)*5.4);border-radius:50%;background:#e9ecef;border:calc(var(--u)*.6) solid #adb5bd}
@@ -57,10 +57,17 @@
   #clockFill{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(255,255,255,.42);border-right:calc(var(--u)*1.4) solid #fff;box-shadow:0 0 calc(var(--u)*2) #fff}
   #clockLab{position:absolute;left:0;right:0;top:calc(var(--u)*21.5);text-align:center;font-size:calc(var(--u)*3.4);font-weight:900;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8);opacity:0;z-index:5;pointer-events:none;transition:opacity .12s}
   #clockLab.on{opacity:.95}
+  #rage{position:relative;margin-top:calc(var(--u)*2);height:calc(var(--u)*5);border-radius:calc(var(--u)*2.5);background:rgba(20,16,24,.72);box-shadow:0 2px 0 rgba(0,0,0,.25);overflow:hidden}
+  #rageFill{position:absolute;left:0;top:0;bottom:0;width:0;background:#74c0fc;transition:width .25s ease-out,background .3s}
+  #rage.r1 #rageFill{background:#ffd43b} #rage.r2 #rageFill{background:#ff922b} #rage.r3 #rageFill{background:#ff6b6b} #rage.r4 #rageFill{background:#e64980;animation:glowHue 1s linear infinite}
+  #rage i{position:absolute;top:0;bottom:0;width:calc(var(--u)*.5);margin-left:calc(var(--u)*-.25);background:rgba(255,255,255,.7)}
+  #rageLab,#rageName{position:absolute;top:0;bottom:0;display:flex;align-items:center;font-size:calc(var(--u)*3);font-weight:900;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.9);white-space:nowrap}
+  #rageLab{left:calc(var(--u)*2.4);letter-spacing:.1em} #rageName{right:calc(var(--u)*2.4);font-size:calc(var(--u)*3.6)}
+  #rageName.bump{animation:bump .35s ease-out}
   #pops{position:absolute;left:50%;top:38%;z-index:6;pointer-events:none}
   .pop{position:absolute;left:0;transform:translateX(-50%);font-size:calc(var(--u)*11);font-weight:900;white-space:nowrap;-webkit-text-stroke:calc(var(--u)*.8) #fff;paint-order:stroke fill;animation:floatUp 1.1s ease-out forwards}
   .pop small{display:block;text-align:center;font-size:.6em}
-  .pop.near{color:#e8590c;font-size:calc(var(--u)*13)} .pop.great{color:#d6336c;font-size:calc(var(--u)*15)} .pop.miss{color:#7048e8;font-size:calc(var(--u)*9)} .pop.bad{color:#e03131}
+  .pop.rage{color:#e03131;font-size:calc(var(--u)*14);top:calc(var(--u)*-14)} .pop.near{color:#e8590c;font-size:calc(var(--u)*13)} .pop.great{color:#d6336c;font-size:calc(var(--u)*15)} .pop.miss{color:#7048e8;font-size:calc(var(--u)*9)} .pop.bad{color:#e03131}
   @keyframes floatUp{0%{opacity:0;margin-top:calc(var(--u)*3);scale:.6}15%{opacity:1;scale:1.15}30%{scale:1}100%{opacity:0;margin-top:calc(var(--u)*-16)}}
 
   #hint{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + var(--u)*8);z-index:5;pointer-events:none;text-align:center;color:#fff;font-size:calc(var(--u)*4.6);font-weight:900;text-shadow:0 2px 6px rgba(0,0,0,.8);opacity:0;transition:opacity .3s;line-height:1.5}
@@ -90,6 +97,7 @@
       <div class="chip" id="multBox"><b id="mult">×1</b></div>
       <div class="chip" id="bumpBox"><span class="lump" id="lump0"></span><span class="lump" id="lump1"></span><span class="lump" id="lump2"></span></div>
     </div>
+    <div id="rage"><i style="left:18%"></i><i style="left:42%"></i><i style="left:68%"></i><i style="left:88%"></i><div id="rageFill"></div><span id="rageLab">怒り</span><span id="rageName">平静</span></div>
   </div>
   <div id="tunnel"></div><div id="danger"></div>
   <div id="flash"></div>
@@ -146,7 +154,8 @@ const CFG = {
     idleWait: 0.15,       // 次を狙う前のひと呼吸
     minWindup: 0.45,      // 怒りで速くなっても、振りかぶりはこれ未満にしない（見てから避けられる下限）
     feintAt: 0.8,         // フェイントは振りかぶりのこの割合で止めて引く（ハンマーを上げきらない）
-    recoverFeint: 0.35,   // フェイントのあと次を狙えるまで
+    recoverFeint: 0.6,    // フェイントのあと次を狙えるまで（途中まで振り下ろして止め、にやりと笑う間）
+    recoverStray: 0.8,    // 隣を叩いてしまったあと（ぽかんとする間）
     ambushWindup: 0.5,    // 待ち伏せ中に同じ穴から出たときの、素早い振りかぶり
     ambushReaction: 0.12, // 待ち伏せ中に気づくまで
     recoverAmbush: 0.25,  // 待ち伏せをあきらめたあと
@@ -162,7 +171,7 @@ const CFG = {
   ],
   // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、stray＝隣を叩く率、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp/rageDown＝怒りの上がりやすさ・さめやすさ
   persons: [
-    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.22, stray: 0.25, feint: 0,    ambush: 0,   rageUp: 1.3, rageDown: 1.5 },
+    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.22, stray: 0.12, feint: 0,    ambush: 0,   rageUp: 1.3, rageDown: 1.5 },
     { id: 'uncle',  name: '負けず嫌いのおじさん', windupMul: 1.0,  reaction: 0.30, stray: 0,    feint: 0.22, ambush: 0,   rageUp: 1.0, rageDown: 0.55 },
     { id: 'granny', name: '正確なおばあちゃん',   windupMul: 1.1,  reaction: 0.30, stray: 0,    feint: 0,    ambush: 1.3, rageUp: 1.35, rageDown: 1.0 },
   ],
@@ -249,7 +258,7 @@ function windupDur(P, S, CFG) { return Math.max(CFG.human.minWindup, CFG.human.w
 
 function newHuman(CFG, person) {
   // seq＝フェーズが変わるたびに増える（見た目の切り替え用）。target2＝2本目のハンマーの穴（怒り最大のとき）
-  return { person, phase: 'idle', t: 0, seq: 0, wait: CFG.human.firstWait, target: -1, target2: -1, dur: 0, stage: 0, feint: false, strayed: false, recover: 0, mood: 'calm' };
+  return { person, phase: 'idle', t: 0, seq: 0, wait: CFG.human.firstWait, target: -1, target2: -1, dur: 0, stage: 0, feint: false, strayed: false, lastStray: false, recover: 0, mood: 'calm' };
 }
 
 // 振りかぶりを始める。ambush＝待ち伏せからの素早い振りかぶり
@@ -258,12 +267,14 @@ function startWindup(hu, hole, ambush, ctx, CFG) {
   hu.phase = 'windup'; hu.t = 0; hu.seq++; hu.mood = 'aim'; hu.stage = ctx.stage;
   hu.target = hole; hu.strayed = false; hu.feint = false; hu.target2 = -1;
   if (!ambush) {
-    if (P.stray > 0 && ctx.rng() < P.stray) {            // 雑：隣（左右）の穴を狙ってしまう
+    // 雑：ときどき隣（左右）の穴を狙ってしまう。続けては起こさない（バグに見えるので）
+    if (P.stray > 0 && !hu.lastStray && ctx.rng() < P.stray) {
       const c = colOf(hole), opts = []; if (c > 0) opts.push(hole - 1); if (c < 2) opts.push(hole + 1);
       hu.target = opts[Math.min(opts.length - 1, Math.floor(ctx.rng() * opts.length))]; hu.strayed = true;
     }
     hu.feint = ctx.rng() < clamp(P.feint + S.feint, 0, 0.6);
   }
+  hu.lastStray = hu.strayed;
   hu.dur = ambush ? CFG.human.ambushWindup : windupDur(P, S, CFG);
   if (S.hammers >= 2 && !hu.feint) {                       // 2本目：ちがう行のどこか（行を変えるだけでは逃げきれない）
     const r2 = (rowOf(hu.target) + 1 + Math.min(1, Math.floor(ctx.rng() * 2))) % 3;
@@ -304,6 +315,7 @@ function humanStep(hu, dt, m, now, CFG, ctx) {
       ev.push({ type: 'impact', hole: hu.target, hole2: hu.target2, hit, stray, gap, close });
       if (hit) { goPhase(hu, 'recover', 'happy'); hu.recover = Hc.recoverHit; }
       else if (!stray && P.ambush > 0) goPhase(hu, 'ambush', 'aim');
+      else if (stray) { goPhase(hu, 'recover', 'confuse'); hu.recover = Hc.recoverStray; }
       else { goPhase(hu, 'recover', 'miss'); hu.recover = Hc.recoverMiss; }
     }
   } else if (hu.phase === 'recover') {
@@ -599,6 +611,7 @@ function updateWorld(W, g, dt, now) {
     const u = clamp(hu.t / hu.dur, 0, 1);
     pose = mixPose(W.from, raised, easeOut(clamp(u / 0.7, 0, 1)));
     if (u > 0.7) { pose.x += Math.sin(now * 55) * 0.06 * (u - 0.7) / 0.3; pose.y += Math.sin(now * 40) * 0.05; }
+    if (hu.strayed) pose.x += Math.sin(now * 13) * 0.5 * easeOut(clamp(u / 0.7, 0, 1));   // 雑：狙いがふらふら揺れる
   } else if (hu.phase === 'strike') {
     const u = clamp(hu.t / CFG.human.strike, 0, 1);
     pose = mixPose(raised, hitP, u * u);
@@ -607,7 +620,11 @@ function updateWorld(W, g, dt, now) {
     pose.y += Math.sin(now * 9) * 0.06;
   } else if (hu.phase === 'recover') {
     const u = clamp(hu.t / hu.recover, 0, 1);
-    pose = hu.mood === 'happy' || hu.mood === 'miss' ? mixPose(hitP, rest, easeOut(clamp((u - 0.35) / 0.65, 0, 1))) : mixPose(W.from, rest, easeOut(u));
+    if (hu.mood === 'happy' || hu.mood === 'miss' || hu.mood === 'confuse') pose = mixPose(hitP, rest, easeOut(clamp((u - 0.35) / 0.65, 0, 1)));
+    else if (hu.mood === 'feint') {   // 途中まで振り下ろして空中でぴたっと止め、にやり。そのあと引く（「わざと」と分かる動き）
+      const fake = mixPose(W.from, hitP, 0.28);
+      pose = u < 0.3 ? mixPose(W.from, fake, Math.sqrt(u / 0.3)) : u < 0.65 ? { x: fake.x + Math.sin(now * 40) * 0.05, y: fake.y + Math.sin(now * 34) * 0.04, z: fake.z, tilt: fake.tilt } : mixPose(fake, rest, easeOut((u - 0.65) / 0.35));
+    } else pose = mixPose(W.from, rest, easeOut(u));
   } else {
     pose = mixPose(W.pose, rest, 1 - Math.exp(-dt * 7));
   }
@@ -660,15 +677,16 @@ function updateWorld(W, g, dt, now) {
   const sg = g.stage;
   let mood = hu.mood; if (mood === 'calm' && sg >= 3) mood = 'rage';
   U.smile.visible = mood === 'calm' || mood === 'aim' || mood === 'happy' || mood === 'feint';
-  U.open.visible = mood === 'miss' || mood === 'rage';
+  U.open.visible = mood === 'miss' || mood === 'rage' || mood === 'confuse';
   U.smile.scale.setScalar(mood === 'happy' || mood === 'feint' ? 1.35 : mood === 'aim' ? 0.7 : 1);
   U.smile.position.y = mood === 'aim' ? -0.42 : -0.28;
-  const browTilt = mood === 'aim' ? 0.45 + sg * 0.06 : mood === 'miss' ? -0.35 : mood === 'happy' ? -0.15 : mood === 'rage' ? 0.6 : mood === 'feint' ? 0.3 : sg * 0.08;
+  const browTilt = mood === 'aim' ? 0.45 + sg * 0.06 : mood === 'miss' ? -0.35 : mood === 'confuse' ? -0.25 : mood === 'happy' ? -0.15 : mood === 'rage' ? 0.6 : mood === 'feint' ? 0.3 : sg * 0.08;
   U.brows[0].rotation.z = -browTilt; U.brows[1].rotation.z = browTilt;
   U.brows[0].position.y = U.brows[1].position.y = mood === 'miss' ? 0.72 : 0.58;
   const gz = hu.target >= 0 && (hu.phase === 'windup' || hu.phase === 'strike') ? holePos(hu.target, CFG) : { x: 0, z: 0 };
   const swirl = sg >= 4 ? Math.sin(now * 22) * 0.1 : 0;
-  U.pupils[0].position.x = -0.46 + clamp(gz.x * 0.06, -0.1, 0.1) + swirl; U.pupils[1].position.x = 0.46 + clamp(gz.x * 0.06, -0.1, 0.1) + swirl;
+  const away = mood === 'confuse' ? 0.1 : 0;
+  U.pupils[0].position.x = -0.46 + away + clamp(gz.x * 0.06, -0.1, 0.1) + swirl; U.pupils[1].position.x = 0.46 + away + clamp(gz.x * 0.06, -0.1, 0.1) + swirl;
   U.pupils[0].position.y = U.pupils[1].position.y = 0.14 - (warn ? 0.07 : 0) + (sg >= 4 ? Math.cos(now * 22) * 0.08 : 0);
   // 体の動き：振りかぶりで反る、空振りで首をふる、当てたら弾む、フェイントで肩をゆらす、激怒で台をバンバン
   let lean = 0, shake = 0, bob = 0;
@@ -679,6 +697,7 @@ function updateWorld(W, g, dt, now) {
   else if (hu.phase === 'recover' && hu.mood === 'feint') bob = Math.abs(Math.sin(hu.t * 16)) * 0.12;
   if (sg >= 3 && hu.phase === 'idle') bob += Math.abs(Math.sin(now * 14)) * 0.14;
   if (sg >= 4) shake += Math.sin(now * 40) * 0.08;
+  U.head.rotation.z = mood === 'confuse' ? 0.3 : mood === 'feint' ? Math.sin(now * 9) * 0.14 : 0;   // ぽかんと首をかしげる／にやりとゆらす
   U.head.rotation.x = lean * 0.6; U.head.rotation.y = shake; U.head.position.y = 4.2 + bob;
   // 湯気
   U.steam.visible = sg >= 3;
@@ -743,6 +762,7 @@ function updateWorld(W, g, dt, now) {
     const left = Math.max(0, Math.ceil(CFG.duration - g.t));
     $('time').textContent = left; $('timeBox').classList.toggle('low', left <= 10);
     for (let i = 0; i < 3; i++) $('lump' + i).classList.toggle('on', i < g.bumps);
+    $('rageFill').style.width = clamp(g.rage, 0, 100) + '%'; $('rage').className = 'r' + g.stage; $('rageName').textContent = CFG.stages[g.stage].name;
     $('mult').textContent = '×' + g.mult; $('multBox').className = 'chip m' + g.mult + ($('multBox').classList.contains('bump') ? ' bump' : '');
     $('titleBest').textContent = best;
   }
@@ -808,6 +828,7 @@ function updateWorld(W, g, dt, now) {
         $('scoreBox').classList.remove('bump'); void $('scoreBox').offsetWidth; $('scoreBox').classList.add('bump');
       } else if (e.type === 'stage') {
         shakeAmp = Math.max(shakeAmp, 0.35);
+        if (e.stage > e.from) { pop(CFG.stages[e.stage].name + '！<small>点が ×' + (e.stage + 1) + '</small>', 'rage'); const rn = $('rageName'); rn.classList.remove('bump'); void rn.offsetWidth; rn.classList.add('bump'); }
         if (e.stage > e.from) { const b = $('multBox'); b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
       } else if (e.type === 'bump') {
         pop('ピコッ！', 'bad');

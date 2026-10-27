@@ -235,6 +235,7 @@ function updateWorld(W, g, dt, now) {
     const u = clamp(hu.t / hu.dur, 0, 1);
     pose = mixPose(W.from, raised, easeOut(clamp(u / 0.7, 0, 1)));
     if (u > 0.7) { pose.x += Math.sin(now * 55) * 0.06 * (u - 0.7) / 0.3; pose.y += Math.sin(now * 40) * 0.05; }
+    if (hu.strayed) pose.x += Math.sin(now * 13) * 0.5 * easeOut(clamp(u / 0.7, 0, 1));   // 雑：狙いがふらふら揺れる
   } else if (hu.phase === 'strike') {
     const u = clamp(hu.t / CFG.human.strike, 0, 1);
     pose = mixPose(raised, hitP, u * u);
@@ -243,7 +244,11 @@ function updateWorld(W, g, dt, now) {
     pose.y += Math.sin(now * 9) * 0.06;
   } else if (hu.phase === 'recover') {
     const u = clamp(hu.t / hu.recover, 0, 1);
-    pose = hu.mood === 'happy' || hu.mood === 'miss' ? mixPose(hitP, rest, easeOut(clamp((u - 0.35) / 0.65, 0, 1))) : mixPose(W.from, rest, easeOut(u));
+    if (hu.mood === 'happy' || hu.mood === 'miss' || hu.mood === 'confuse') pose = mixPose(hitP, rest, easeOut(clamp((u - 0.35) / 0.65, 0, 1)));
+    else if (hu.mood === 'feint') {   // 途中まで振り下ろして空中でぴたっと止め、にやり。そのあと引く（「わざと」と分かる動き）
+      const fake = mixPose(W.from, hitP, 0.28);
+      pose = u < 0.3 ? mixPose(W.from, fake, Math.sqrt(u / 0.3)) : u < 0.65 ? { x: fake.x + Math.sin(now * 40) * 0.05, y: fake.y + Math.sin(now * 34) * 0.04, z: fake.z, tilt: fake.tilt } : mixPose(fake, rest, easeOut((u - 0.65) / 0.35));
+    } else pose = mixPose(W.from, rest, easeOut(u));
   } else {
     pose = mixPose(W.pose, rest, 1 - Math.exp(-dt * 7));
   }
@@ -296,15 +301,16 @@ function updateWorld(W, g, dt, now) {
   const sg = g.stage;
   let mood = hu.mood; if (mood === 'calm' && sg >= 3) mood = 'rage';
   U.smile.visible = mood === 'calm' || mood === 'aim' || mood === 'happy' || mood === 'feint';
-  U.open.visible = mood === 'miss' || mood === 'rage';
+  U.open.visible = mood === 'miss' || mood === 'rage' || mood === 'confuse';
   U.smile.scale.setScalar(mood === 'happy' || mood === 'feint' ? 1.35 : mood === 'aim' ? 0.7 : 1);
   U.smile.position.y = mood === 'aim' ? -0.42 : -0.28;
-  const browTilt = mood === 'aim' ? 0.45 + sg * 0.06 : mood === 'miss' ? -0.35 : mood === 'happy' ? -0.15 : mood === 'rage' ? 0.6 : mood === 'feint' ? 0.3 : sg * 0.08;
+  const browTilt = mood === 'aim' ? 0.45 + sg * 0.06 : mood === 'miss' ? -0.35 : mood === 'confuse' ? -0.25 : mood === 'happy' ? -0.15 : mood === 'rage' ? 0.6 : mood === 'feint' ? 0.3 : sg * 0.08;
   U.brows[0].rotation.z = -browTilt; U.brows[1].rotation.z = browTilt;
   U.brows[0].position.y = U.brows[1].position.y = mood === 'miss' ? 0.72 : 0.58;
   const gz = hu.target >= 0 && (hu.phase === 'windup' || hu.phase === 'strike') ? holePos(hu.target, CFG) : { x: 0, z: 0 };
   const swirl = sg >= 4 ? Math.sin(now * 22) * 0.1 : 0;
-  U.pupils[0].position.x = -0.46 + clamp(gz.x * 0.06, -0.1, 0.1) + swirl; U.pupils[1].position.x = 0.46 + clamp(gz.x * 0.06, -0.1, 0.1) + swirl;
+  const away = mood === 'confuse' ? 0.1 : 0;
+  U.pupils[0].position.x = -0.46 + away + clamp(gz.x * 0.06, -0.1, 0.1) + swirl; U.pupils[1].position.x = 0.46 + away + clamp(gz.x * 0.06, -0.1, 0.1) + swirl;
   U.pupils[0].position.y = U.pupils[1].position.y = 0.14 - (warn ? 0.07 : 0) + (sg >= 4 ? Math.cos(now * 22) * 0.08 : 0);
   // 体の動き：振りかぶりで反る、空振りで首をふる、当てたら弾む、フェイントで肩をゆらす、激怒で台をバンバン
   let lean = 0, shake = 0, bob = 0;
@@ -315,6 +321,7 @@ function updateWorld(W, g, dt, now) {
   else if (hu.phase === 'recover' && hu.mood === 'feint') bob = Math.abs(Math.sin(hu.t * 16)) * 0.12;
   if (sg >= 3 && hu.phase === 'idle') bob += Math.abs(Math.sin(now * 14)) * 0.14;
   if (sg >= 4) shake += Math.sin(now * 40) * 0.08;
+  U.head.rotation.z = mood === 'confuse' ? 0.3 : mood === 'feint' ? Math.sin(now * 9) * 0.14 : 0;   // ぽかんと首をかしげる／にやりとゆらす
   U.head.rotation.x = lean * 0.6; U.head.rotation.y = shake; U.head.position.y = 4.2 + bob;
   // 湯気
   U.steam.visible = sg >= 3;

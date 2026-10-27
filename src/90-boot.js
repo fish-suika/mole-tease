@@ -47,6 +47,7 @@
     const left = Math.max(0, Math.ceil(CFG.duration - g.t));
     $('time').textContent = left; $('timeBox').classList.toggle('low', left <= 10);
     for (let i = 0; i < 3; i++) $('lump' + i).classList.toggle('on', i < g.bumps);
+    $('rageFill').style.width = clamp(g.rage, 0, 100) + '%'; $('rage').className = 'r' + g.stage; $('rageName').textContent = CFG.stages[g.stage].name;
     $('mult').textContent = '×' + g.mult; $('multBox').className = 'chip m' + g.mult + ($('multBox').classList.contains('bump') ? ' bump' : '');
     $('titleBest').textContent = best;
   }
@@ -112,6 +113,7 @@
         $('scoreBox').classList.remove('bump'); void $('scoreBox').offsetWidth; $('scoreBox').classList.add('bump');
       } else if (e.type === 'stage') {
         shakeAmp = Math.max(shakeAmp, 0.35);
+        if (e.stage > e.from) { pop(CFG.stages[e.stage].name + '！<small>点が ×' + (e.stage + 1) + '</small>', 'rage'); const rn = $('rageName'); rn.classList.remove('bump'); void rn.offsetWidth; rn.classList.add('bump'); }
         if (e.stage > e.from) { const b = $('multBox'); b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); }
       } else if (e.type === 'bump') {
         pop('ピコッ！', 'bad');

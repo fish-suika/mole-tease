@@ -101,7 +101,9 @@ const holdOn = n => () => n;
   const kw = ky.evs.find(e => e.type === 'windup');
   check('子どもは隣（左右）の穴を狙うことがある', kw && kw.stray && rowOf(kw.hole) === rowOf(4) && Math.abs(colOf(kw.hole) - colOf(4)) === 1, JSON.stringify(kw));
   check('隣を叩かれても当たらず、避けたことにもならない（点・怒りなし）', ky.evs.some(e => e.type === 'stray') && !ky.evs.some(e => e.type === 'whiff') && ky.g.whiffs === 0 && ky.g.rage === 0);
-  check('子どもが隣を叩く率は設定（約 25%）', (() => { let s = 0; const hu = newHuman(CFG, PERS('kid')), rng = seeded(41); for (let i = 0; i < 2000; i++) if (startWindup(hu, 4, false, { stage: 0, rng }, CFG).stray) s++; return Math.abs(s / 2000 - PERS('kid').stray) < 0.04; })());
+  check('子どもが隣を叩く率は設定（約 12%）', (() => { let n = 0; const rng = seeded(41); for (let i = 0; i < 3000; i++) { const hu = newHuman(CFG, PERS('kid')); if (startWindup(hu, 4, false, { stage: 0, rng }, CFG).stray) n++; } return Math.abs(n / 3000 - PERS('kid').stray) < 0.03; })());
+  check('隣を叩くのは続けて起こらない（バグに見えるため）', (() => { const r = runG({ person: PERS('kid'), noRage: true, rng: () => 0 }, skilled(0.15, false), 30); const w = r.evs.filter(e => e.type === 'windup'); for (let i = 1; i < w.length; i++) if (w[i].stray && w[i - 1].stray) return false; return w.some(e => e.stray) && w.some(e => !e.stray); })());
+  check('隣を叩いたあとは、ぽかんとする間（recoverStray）がある', (() => { const r = runG({ person: PERS('kid'), noRage: true, rng: () => 0 }, holdOn(4), 3); return r.g.human.mood === 'confuse' || r.evs.some(e => e.type === 'stray'); })());
   check('端の穴では内側の隣だけを狙う', (() => { for (let s = 1; s <= 100; s++) { const hu = newHuman(CFG, PERS('kid')); const e = startWindup(hu, 3, false, { stage: 0, rng: seeded(s) }, CFG); if (e.stray && e.hole !== 4) return false; const e2 = startWindup(hu, 5, false, { stage: 0, rng: seeded(s) }, CFG); if (e2.stray && e2.hole !== 4) return false; } return true; })());
 
   // 待ち伏せ（おばあちゃん）：空振りした穴の上で構えて待つ

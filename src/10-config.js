@@ -24,7 +24,8 @@ const CFG = {
     idleWait: 0.15,       // 次を狙う前のひと呼吸
     minWindup: 0.45,      // 怒りで速くなっても、振りかぶりはこれ未満にしない（見てから避けられる下限）
     feintAt: 0.8,         // フェイントは振りかぶりのこの割合で止めて引く（ハンマーを上げきらない）
-    recoverFeint: 0.35,   // フェイントのあと次を狙えるまで
+    recoverFeint: 0.6,    // フェイントのあと次を狙えるまで（途中まで振り下ろして止め、にやりと笑う間）
+    recoverStray: 0.8,    // 隣を叩いてしまったあと（ぽかんとする間）
     ambushWindup: 0.5,    // 待ち伏せ中に同じ穴から出たときの、素早い振りかぶり
     ambushReaction: 0.12, // 待ち伏せ中に気づくまで
     recoverAmbush: 0.25,  // 待ち伏せをあきらめたあと
@@ -40,7 +41,7 @@ const CFG = {
   ],
   // 叩く人 3人（毎回ランダムに 1人）。windupMul＝振りかぶりの長さの倍率、reaction＝気づくまで、stray＝隣を叩く率、feint＝フェイント率、ambush＝待ち伏せの秒数、rageUp/rageDown＝怒りの上がりやすさ・さめやすさ
   persons: [
-    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.22, stray: 0.25, feint: 0,    ambush: 0,   rageUp: 1.3, rageDown: 1.5 },
+    { id: 'kid',    name: 'せっかちな子ども',     windupMul: 0.62, reaction: 0.22, stray: 0.12, feint: 0,    ambush: 0,   rageUp: 1.3, rageDown: 1.5 },
     { id: 'uncle',  name: '負けず嫌いのおじさん', windupMul: 1.0,  reaction: 0.30, stray: 0,    feint: 0.22, ambush: 0,   rageUp: 1.0, rageDown: 0.55 },
     { id: 'granny', name: '正確なおばあちゃん',   windupMul: 1.1,  reaction: 0.30, stray: 0,    feint: 0,    ambush: 1.3, rageUp: 1.35, rageDown: 1.0 },
   ],
