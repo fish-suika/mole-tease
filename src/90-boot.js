@@ -71,7 +71,7 @@
     press = -1; ptr = null; paused = false; show('pauseScr', false);
     state = 'intro'; introT = 0; introFlags = {}; stepT = 0; prevH = 0; lastTick = -1; slowT = 0; hold = 0;
     show('titleScr', false); show('overScr', false); hud.classList.remove('on'); hint.classList.remove('on'); $('who').classList.remove('on'); clearPops();
-    peek = 1; camX = holePos(4, CFG).x;       // 地下の穴の中から始まる
+    peek = CFG.fps.amt; camX = holePos(4, CFG).x;       // 地下の穴の中から始まる
     $('iris').style.opacity = 1; show('skip', true);
     SFX.unlock(); SFX.rumble();
     refreshHud();
@@ -234,7 +234,7 @@
 
     // 出ている間は一人称：出ている穴の、モグラの目の位置へカメラが降りる（押す位置の判定は俯瞰のカメラ基準のまま）。開始は地下から上がってくる
     const P = CFG.fps, mp = holePos(g.mole.hole, CFG), ist2 = state === 'intro' ? introState(introT) : null;
-    peek += ((ist2 ? 1 : state === 'play' ? clamp(g.mole.h, 0, 1) * P.amt : 0) - peek) * (1 - Math.exp(-real * P.rate));
+    peek += ((ist2 ? P.amt : state === 'play' ? clamp(g.mole.h, 0, 1) * P.amt : 0) - peek) * (1 - Math.exp(-real * P.rate));
     camX += (mp.x - camX) * (1 - Math.exp(-real * P.rate));
     shakeAmp = Math.max(0, shakeAmp - real * 1.4);
     const eyeY = ist2 ? lerp(-0.95, P.eyeBase + P.eyeK * 0.9, ist2.camU) : P.eyeBase + P.eyeK * g.mole.h;

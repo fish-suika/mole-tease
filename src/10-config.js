@@ -64,3 +64,5 @@ const CFG = {
   // eyeBase＋eyeK×高さ＝目の高さ、back＝穴の中心より後ろへ、pitch＝見上げる角度（度）、windupPitch＝振りかぶりのあいだ頭上のハンマーを見上げる分（度）、hideAt＝この寄り具合を超えたらモグラの体を隠す（鼻と手だけ残す）
   fps: { amt: 1, eyeBase: 0.08, eyeK: 0.92, back: 0.45, pitch: 11, lookDist: 10, lookXk: 0.25, rate: 9, hideAt: 0.35, fov: 84, windupPitch: 42, tiltRate: 6 },
 };
+// 録画用の隠しスイッチ：URL の末尾に ?view=top を付けると一人称視点を切り、ずっと俯瞰のままにする（ふだんの遊びには影響しない）
+try { if (new URLSearchParams(location.search).get('view') === 'top') CFG.fps.amt = 0; } catch (e) {}
