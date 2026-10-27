@@ -141,8 +141,10 @@
     x.fillStyle = 'rgba(255,255,255,.06)'; for (let i = 0; i < 9; i++) { x.beginPath(); x.ellipse(180 + (i % 3) * 360, 1020 + Math.floor(i / 3) * 110, 110, 40, 0, 0, Math.PI * 2); x.fill(); }   // 台の穴
     x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = '900 72px ' + F; x.fillText('叩かれないモグラ', 540, 180);
     x.fillStyle = '#c9c0e0'; x.font = '700 48px ' + F; x.fillText(r.reason === 'escaped' ? '60 秒、逃げきった' : '叩かれてしまった…', 540, 260);
-    x.fillStyle = '#ffd43b'; x.font = '900 330px ' + F; x.fillText(String(r.score), 540, 640);
-    x.fillStyle = '#fff'; x.font = '900 72px ' + F; x.fillText('点', 540, 740);
+    x.font = '900 330px ' + F; const sw = x.measureText(String(r.score)).width; x.font = '900 100px ' + F; const uw = x.measureText('点').width;   // 数字の右に「点」を並べる
+    const sx = 540 - (sw + 16 + uw) / 2; x.textAlign = 'left';
+    x.fillStyle = '#ffd43b'; x.font = '900 330px ' + F; x.fillText(String(r.score), sx, 680);
+    x.fillStyle = '#fff'; x.font = '900 100px ' + F; x.fillText('点', sx + sw + 16, 680); x.textAlign = 'center';
     x.fillStyle = '#fff'; x.font = '700 54px ' + F; x.fillText(r.name, 540, 860);
     x.fillStyle = STAGE_COLORS[r.maxStage]; x.font = '900 76px ' + F; x.fillText(r.maxStage > 0 ? '「' + r.stageName + '」まで怒らせた' : '最後まで平静だった', 540, 960);
     x.fillStyle = '#c9c0e0'; x.font = '700 46px ' + F; x.fillText('空振りさせた ' + r.whiffs + ' 回　自己ベスト ' + r.best + ' 点', 540, 1100);

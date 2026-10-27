@@ -94,6 +94,7 @@
   #overNew.on{display:block}
   .sbtn{border:1px solid rgba(255,255,255,.45);background:transparent;color:#fff;border-radius:calc(var(--u)*4);padding:calc(var(--u)*1.8) calc(var(--u)*6);font-size:calc(var(--u)*3.8);font-weight:700}
   .sbtn:active{background:rgba(255,255,255,.15)}
+  .big .unit{font-size:.32em;color:#fff;margin-left:.12em}
   .big{font-size:calc(var(--u)*22);font-weight:900;color:#ffd43b;line-height:1;font-variant-numeric:tabular-nums}
   .btn{border:0;border-radius:calc(var(--u)*5);padding:calc(var(--u)*3.4) calc(var(--u)*10);font-size:calc(var(--u)*6);font-weight:900;background:#ffd43b;color:#3b2a00;box-shadow:0 calc(var(--u)*1) 0 #c99a00}
   .btn:active{transform:translateY(2px);box-shadow:0 calc(var(--u)*.4) 0 #c99a00}
@@ -104,7 +105,7 @@
   <div id="view"></div>
   <div id="hud">
     <div class="row">
-      <div class="chip" id="scoreBox"><small>点</small><b id="score">0</b></div>
+      <div class="chip" id="scoreBox"><b id="score">0</b><small>点</small></div>
       <div class="chip" id="timeBox"><small>残り</small><b id="time">60</b></div>
       <div class="chip" id="multBox"><b id="mult">×1</b></div>
       <div class="chip" id="bumpBox"><span class="lump" id="lump0"></span><span class="lump" id="lump1"></span><span class="lump" id="lump2"></span></div>
@@ -134,8 +135,7 @@
   </div>
   <div class="screen" id="overScr">
     <h2 id="overTitle">逃げきり！</h2>
-    <p>点</p>
-    <div class="big" id="overScore">0</div>
+    <div class="big nw"><span id="overScore">0</span><small class="unit">点</small></div>
     <div id="overNew">新記録！</div>
     <p id="overWho"></p>
     <p class="nw" id="overStat"></p>

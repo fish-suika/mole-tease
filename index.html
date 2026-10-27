@@ -94,6 +94,7 @@
   #overNew.on{display:block}
   .sbtn{border:1px solid rgba(255,255,255,.45);background:transparent;color:#fff;border-radius:calc(var(--u)*4);padding:calc(var(--u)*1.8) calc(var(--u)*6);font-size:calc(var(--u)*3.8);font-weight:700}
   .sbtn:active{background:rgba(255,255,255,.15)}
+  .big .unit{font-size:.32em;color:#fff;margin-left:.12em}
   .big{font-size:calc(var(--u)*22);font-weight:900;color:#ffd43b;line-height:1;font-variant-numeric:tabular-nums}
   .btn{border:0;border-radius:calc(var(--u)*5);padding:calc(var(--u)*3.4) calc(var(--u)*10);font-size:calc(var(--u)*6);font-weight:900;background:#ffd43b;color:#3b2a00;box-shadow:0 calc(var(--u)*1) 0 #c99a00}
   .btn:active{transform:translateY(2px);box-shadow:0 calc(var(--u)*.4) 0 #c99a00}
@@ -104,7 +105,7 @@
   <div id="view"></div>
   <div id="hud">
     <div class="row">
-      <div class="chip" id="scoreBox"><small>点</small><b id="score">0</b></div>
+      <div class="chip" id="scoreBox"><b id="score">0</b><small>点</small></div>
       <div class="chip" id="timeBox"><small>残り</small><b id="time">60</b></div>
       <div class="chip" id="multBox"><b id="mult">×1</b></div>
       <div class="chip" id="bumpBox"><span class="lump" id="lump0"></span><span class="lump" id="lump1"></span><span class="lump" id="lump2"></span></div>
@@ -134,8 +135,7 @@
   </div>
   <div class="screen" id="overScr">
     <h2 id="overTitle">逃げきり！</h2>
-    <p>点</p>
-    <div class="big" id="overScore">0</div>
+    <div class="big nw"><span id="overScore">0</span><small class="unit">点</small></div>
     <div id="overNew">新記録！</div>
     <p id="overWho"></p>
     <p class="nw" id="overStat"></p>
@@ -1066,8 +1066,10 @@ const SFX = (function () {
     x.fillStyle = 'rgba(255,255,255,.06)'; for (let i = 0; i < 9; i++) { x.beginPath(); x.ellipse(180 + (i % 3) * 360, 1020 + Math.floor(i / 3) * 110, 110, 40, 0, 0, Math.PI * 2); x.fill(); }   // 台の穴
     x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = '900 72px ' + F; x.fillText('叩かれないモグラ', 540, 180);
     x.fillStyle = '#c9c0e0'; x.font = '700 48px ' + F; x.fillText(r.reason === 'escaped' ? '60 秒、逃げきった' : '叩かれてしまった…', 540, 260);
-    x.fillStyle = '#ffd43b'; x.font = '900 330px ' + F; x.fillText(String(r.score), 540, 640);
-    x.fillStyle = '#fff'; x.font = '900 72px ' + F; x.fillText('点', 540, 740);
+    x.font = '900 330px ' + F; const sw = x.measureText(String(r.score)).width; x.font = '900 100px ' + F; const uw = x.measureText('点').width;   // 数字の右に「点」を並べる
+    const sx = 540 - (sw + 16 + uw) / 2; x.textAlign = 'left';
+    x.fillStyle = '#ffd43b'; x.font = '900 330px ' + F; x.fillText(String(r.score), sx, 680);
+    x.fillStyle = '#fff'; x.font = '900 100px ' + F; x.fillText('点', sx + sw + 16, 680); x.textAlign = 'center';
     x.fillStyle = '#fff'; x.font = '700 54px ' + F; x.fillText(r.name, 540, 860);
     x.fillStyle = STAGE_COLORS[r.maxStage]; x.font = '900 76px ' + F; x.fillText(r.maxStage > 0 ? '「' + r.stageName + '」まで怒らせた' : '最後まで平静だった', 540, 960);
     x.fillStyle = '#c9c0e0'; x.font = '700 46px ' + F; x.fillText('空振りさせた ' + r.whiffs + ' 回　自己ベスト ' + r.best + ' 点', 540, 1100);
